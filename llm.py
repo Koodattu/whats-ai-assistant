@@ -8,7 +8,7 @@ from config import (
     OPENAI_API_URL, OPENAI_MODEL_NAME,
     SUMMARIZE_PROMPT_EN, SUMMARIZE_PROMPT_FI,
     FINAL_RESPONSE_PROMPT_EN, FINAL_RESPONSE_PROMPT_FI,
-    LANG_SELECTED, MAX_MESSAGES
+    LANG_SELECTED, MAX_MESSAGES, AI_ASSISTANT_NAME
 )
 from database import get_recent_messages
 
@@ -47,6 +47,19 @@ def _call_openai_api(prompt_text):
     except requests.RequestException as e:
         logging.error(f"OpenAI API Request Failed: {e}")
         return "Error with OpenAI API request."
+
+def generate_first_time_greeting(user_name, user_message):
+    greeting_prompt = f"""\
+You are {AI_ASSISTANT_NAME}, a friendly and helpful assistant.
+This is your first interaction with the user.
+The user has just sent the following message:
+"{user_message}"
+
+Please greet the user by their name "{user_name}".
+Respond in the same language as the user's message.
+Keep the greeting short and welcoming.
+"""
+    return _call_llm_api(greeting_prompt).strip()
 
 def summarize_conversation(user_id):
     """

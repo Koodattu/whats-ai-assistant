@@ -10,7 +10,8 @@ from scraping import scrape_text
 from llm import (
     summarize_conversation,
     generate_wait_message,
-    generate_final_response
+    generate_final_response,
+    generate_first_time_greeting
 )
 
 # A simple in-memory dictionary to store scraped link content per user
@@ -64,9 +65,24 @@ def on_message(client: NewClient, message: MessageEv):
     )
     from_me = message.Info.MessageSource.IsFromMe
     timestamp = message.Info.Timestamp // 1000  # Convert ms to s if needed
-    sender_name = message.Info.Pushname
+    sender_name = message.Info.Pushname or "User"
 
     log.info(f"Message from {sender_name} ({sender_id}): {text}")
+
+    # Check if this is the first message from the user
+    previous_messages = get_messages(sender_id)
+    is_first_message = len(previous_messages) == 0
+
+    if is_first_message:
+        # Generate the greeting using the new function, including the user's message
+        greeting = generate_first_time_greeting(sender_name, text)
+
+        # Send the greeting to the user
+        client.send_message(chat, greeting)
+        log.info(f"Sent greeting to {sender_name} ({sender_id}): {greeting}")
+
+        # Save the greeting message to the DB
+        save_message(sender_id, greeting, int(time.time()), True)
 
     # Mark as read
     client.mark_read(
