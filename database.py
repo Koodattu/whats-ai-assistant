@@ -1,14 +1,11 @@
-import os
 import sqlite3
+from config import CONV_DB_PATH
 
-DB_PATH = "db/conversations.sqlite3"
-os.makedirs(os.path.dirname(DB_PATH), exist_ok=True)
-
-def init_db(db_path=DB_PATH):
+def init_db():
     """Initialize the SQLite database with a unique constraint."""
     # create folder if it doesn't exist
 
-    conn = sqlite3.connect(db_path)
+    conn = sqlite3.connect(CONV_DB_PATH)
     cursor = conn.cursor()
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS messages (
@@ -23,9 +20,9 @@ def init_db(db_path=DB_PATH):
     conn.commit()
     conn.close()
 
-def save_message(user_id, message_content, timestamp, from_me, db_path=DB_PATH):
+def save_message(user_id, message_content, timestamp, from_me):
     """Insert a message into the DB if it doesn't already exist."""
-    conn = sqlite3.connect(db_path)
+    conn = sqlite3.connect(CONV_DB_PATH)
     cursor = conn.cursor()
     try:
         cursor.execute("""
@@ -39,9 +36,9 @@ def save_message(user_id, message_content, timestamp, from_me, db_path=DB_PATH):
     finally:
         conn.close()
 
-def get_messages(user_id, db_path=DB_PATH):
+def get_messages(user_id):
     """Retrieve all messages for a particular user_id."""
-    conn = sqlite3.connect(db_path)
+    conn = sqlite3.connect(CONV_DB_PATH)
     cursor = conn.cursor()
     cursor.execute("""
         SELECT message_content, timestamp, from_me
@@ -52,3 +49,22 @@ def get_messages(user_id, db_path=DB_PATH):
     results = cursor.fetchall()
     conn.close()
     return results
+
+def get_recent_messages(user_id, max_messages):
+    """
+    Retrieve the most recent `max_messages` for a particular user_id, ordered oldest to newest.
+    """
+    conn = sqlite3.connect(CONV_DB_PATH)
+    cursor = conn.cursor()
+    cursor.execute(f"""
+        SELECT message_content, timestamp, from_me
+        FROM messages
+        WHERE user_id = ?
+        ORDER BY timestamp DESC
+        LIMIT ?
+    """, (user_id, max_messages))
+    results = cursor.fetchall()
+    conn.close()
+
+    # Reverse the results to return them in chronological order
+    return results[::-1]
