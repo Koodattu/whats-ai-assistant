@@ -69,6 +69,14 @@ def on_message(client: NewClient, message: MessageEv):
 
     log.info(f"Message from {sender_name} ({sender_id}): {text}")
 
+    # Mark as read
+    client.mark_read(
+        message.Info.ID,
+        chat=chat,
+        sender=message.Info.MessageSource.Sender,
+        receipt=ReceiptType.READ
+    )
+
     # Check if this is the first message from the user
     previous_messages = get_messages(sender_id)
     is_first_message = len(previous_messages) == 0
@@ -83,14 +91,6 @@ def on_message(client: NewClient, message: MessageEv):
 
         # Save the greeting message to the DB
         save_message(sender_id, greeting, int(time.time()), True)
-
-    # Mark as read
-    client.mark_read(
-        message.Info.ID,
-        chat=chat,
-        sender=message.Info.MessageSource.Sender,
-        receipt=ReceiptType.READ
-    )
 
     # Save incoming to DB
     save_message(sender_id, text, timestamp, from_me)
