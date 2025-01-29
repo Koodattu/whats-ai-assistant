@@ -10,7 +10,7 @@ Whats-AI-Assistant is an AI-powered chatbot developed as a proof of concept demo
 
 <div align="center">
 
-**This demo showcases AI-driven conversational interactions and automation, leveraging WhatsApp as a primary interface.**
+**This demo showcases AI-driven conversational interactions and automation, leveraging WhatsApp as a primary interface. It's made only as a proof-of-concept and for educational demo purposes.**
 
 </div>
 
@@ -18,9 +18,9 @@ Whats-AI-Assistant is an AI-powered chatbot developed as a proof of concept demo
 
 - **WhatsApp Integration**: Uses Neonize to interact with WhatsApp users.
 - **LLM Support**: Works with OpenAI API or local Ollama models.
-- **Conversation Summarization**: Generates concise summaries of previous interactions.
-- **Web Scraping**: Extracts and processes text from links sent in messages.
-- **Persistent Storage**: Saves conversations in an SQLite database.
+- **Conversation Summarization**: Generates concise summaries of previous interactions, which is injected to the LLM as additional context.
+- **Web Scraping**: Extracts and processes text from links sent in messages to be used as context for the LLM.
+- **Persistent Storage**: Fetches previous conversation history and saves all conversations in an SQLite database.
 
 ## Installation
 
@@ -55,10 +55,7 @@ pip install -r requirements.txt
 2. **Application Settings**:
    - Modify `config.py` to configure various application settings:
      - **Model Settings**: Specify the language model to use (e.g., OpenAI's GPT-3 or a local Ollama model).
-     - **Database Paths**: Set the path for the SQLite database to store conversations.
      - **Language Preferences**: Define the default language for the assistant's responses.
-     - **Neonize Configuration**: Configure Neonize settings to connect to your desired WhatsApp account. For detailed instructions, refer to the [Neonize documentation](https://github.com/krypton-byte/neonize).
-
 ## Usage
 
 Start the assistant with:
@@ -66,6 +63,8 @@ Start the assistant with:
 ```bash
 python main.py
 ```
+
+Neonize will print you a QR code in the console to link your Whatsapp account to.
 
 ## File Structure
 
@@ -81,7 +80,7 @@ python main.py
 
 ## Acknowledgments
 
-This project utilizes the [Neonize](https://github.com/krypton-byte/neonize) Python library, which acts as a wrapper for [Whatsmeow](https://github.com/tulir/whatsmeow), enabling efficient WhatsApp automation.
+This project utilizes the [Neonize](https://github.com/krypton-byte/neonize) Python library, which acts as a wrapper for [Whatsmeow](https://github.com/tulir/whatsmeow), enabling the WhatsApp automation. Use at your own risk.
 
 ## Contributing
 
@@ -97,5 +96,5 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 
 ## Contact
 
-For questions or support, reach out to [Your Name] at [your-email@example.com].
+For questions or support, feel free to open an issue or reach out to Juha Ala-Rantala at [juha.ala-rantala@tuni.fi](mailto:juha.ala-rantala@tuni.fi).
 
