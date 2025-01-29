@@ -73,6 +73,7 @@ Now, the user's latest message is:
 "{user_message}"
 
 Please provide a short, friendly, helpful response in the same language as the user's message.
+It's ok to admit that you do not know something.
 Use the user's latest message and the summary to determine the language.
 If the user included questions about the link, address them specifically.
 Otherwise, politely offer to clarify or answer further questions.
