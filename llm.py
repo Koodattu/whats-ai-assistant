@@ -102,6 +102,7 @@ def generate_final_response(conversation_summary, scraped_text, user_text):
 
     # Format the prompt
     final_prompt = prompt_template.format(
+        ai_assistant_name=AI_ASSISTANT_NAME,
         conversation_summary=conversation_summary,
         scraped_text=scraped_text or "No additional content provided.",
         user_message=user_text
