@@ -11,7 +11,7 @@
 
 ## Overview
 
-Whats-AI-Assistant is an AI-powered chatbot developed as a proof of concept demo at GPT Lab Seinäjoki AI Research Initiative. It integrates with WhatsApp using the Neonize framework, leveraging OpenAI or local language models to generate responses based on chat history and web scraping. The assistant supports multiple languages and can summarize conversations for improved interaction quality.
+Whats-AI-Assistant is an AI-powered chatbot developed as a proof of concept demo at [GPT Lab Seinäjoki](https://www.tuni.fi/en/research/gpt-lab-seinajoki) AI Research Initiative. It integrates with WhatsApp using the Neonize framework, leveraging OpenAI or local language models to generate responses based on chat history and web scraping. The assistant supports multiple languages and can summarize conversations for improved interaction quality.
 
 <div align="center">
 
