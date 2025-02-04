@@ -123,7 +123,7 @@ def on_message(client: NewClient, message: MessageEv):
         # (3) Store/accumulate scraped content
         if sender_id not in USER_SCRAPED_CONTENT:
             USER_SCRAPED_CONTENT[sender_id] = ""
-        USER_SCRAPED_CONTENT[sender_id] += f"\n[Scraped from {link}]\n{scraped_content}"
+        USER_SCRAPED_CONTENT[sender_id] = f"\n[Scraped from {link}]\n{scraped_content}"
 
     # Summarize the most recent messages
     conversation_summary = summarize_conversation(sender_id)
