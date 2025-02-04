@@ -79,6 +79,7 @@ def on_message(client: NewClient, message: MessageEv):
 
     # Check if the user wants to clear the conversation history
     if "_first_message" in text:
+        client.send_message(chat, "[SYSTEM] Clearing conversation history!")
         delete_messages(sender_id)
         log.info(f"Cleared conversation history for {sender_id} due to '_first_message' command.")
 
