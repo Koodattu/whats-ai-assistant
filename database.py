@@ -1,5 +1,5 @@
 import sqlite3
-from config import CONV_DB_PATH
+from config import CONV_DB_PATH, MAX_MESSAGES
 
 def init_db():
     """Initialize the SQLite database with a unique constraint."""
@@ -50,7 +50,7 @@ def get_messages(user_id):
     conn.close()
     return results
 
-def get_recent_messages(user_id, max_messages):
+def get_recent_messages(user_id):
     """
     Retrieve the most recent `max_messages` for a particular user_id, ordered oldest to newest.
     """
@@ -62,7 +62,7 @@ def get_recent_messages(user_id, max_messages):
         WHERE user_id = ?
         ORDER BY timestamp DESC
         LIMIT ?
-    """, (user_id, max_messages))
+    """, (user_id, MAX_MESSAGES))
     results = cursor.fetchall()
     conn.close()
 

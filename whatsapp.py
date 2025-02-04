@@ -5,7 +5,7 @@ from neonize.client import NewClient
 from neonize.events import MessageEv, HistorySyncEv
 from neonize.utils.enum import ReceiptType
 from neonize.utils import log
-from database import save_message, get_messages, delete_messages
+from database import save_message, get_messages, delete_messages, get_recent_messages
 from scraping import scrape_text
 from llm import (
     summarize_conversation,
@@ -91,6 +91,9 @@ def on_message(client: NewClient, message: MessageEv):
     previous_messages = get_messages(sender_id)
     is_first_message = len(previous_messages) == 0
 
+    # Save incoming to DB
+    save_message(sender_id, text, timestamp, from_me)
+
     if is_first_message:
         # Generate the greeting using the new function, including the user's message
         greeting = generate_first_time_greeting(sender_name, text)
@@ -102,12 +105,14 @@ def on_message(client: NewClient, message: MessageEv):
         # Save the greeting message to the DB
         save_message(sender_id, greeting, int(time.time()), True)
 
-    # Save incoming to DB
-    save_message(sender_id, text, timestamp, from_me)
 
     # Check if text contains a link.
     url_pattern = r'(https?://\S+)'
     links_found = re.findall(url_pattern, text)
+
+    # If no links found and this is the first message, do nothing
+    if not links_found and is_first_message:
+        return
 
     if links_found:
         # Handle link case
@@ -127,11 +132,11 @@ def on_message(client: NewClient, message: MessageEv):
         USER_SCRAPED_CONTENT[sender_id] = f"\n[Scraped from {link}]\n{scraped_content}"
 
     # Summarize the most recent messages
-    conversation_summary = summarize_conversation(sender_id)
+    conversation_history = get_recent_messages(sender_id)
 
     # Generate the final response
     final_answer = generate_final_response(
-        conversation_summary=conversation_summary,
+        previous_messages=conversation_history,
         scraped_text=USER_SCRAPED_CONTENT.get(sender_id, ""),
         user_text=text
     )

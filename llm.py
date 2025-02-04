@@ -59,7 +59,12 @@ Please greet the user by their name "{user_name}".
 Respond in the same language as the user's message.
 Keep the greeting short and welcoming.
 Tell the user your name and that you are an AI assistant.
-IMPORTANT: Only greet the user, tell your name and the fact that you are an artificial intelligence assistant.
+IMPORTANT: 
+1. Greet the user with their name, 
+2. tell your name
+3. state the fact that you are an artificial intelligence assistant
+4. offer to help the user
+5. tell you can also open links and users can ask you about their content
 """
     return _call_llm_api(greeting_prompt).strip()
 
@@ -92,7 +97,7 @@ def summarize_conversation(user_id):
 
     return _call_llm_api(prompt).strip()
 
-def generate_final_response(conversation_summary, scraped_text, user_text):
+def generate_final_response(previous_messages, scraped_text, user_text):
     """
     Generate the final response for the user.
     """
@@ -105,7 +110,7 @@ def generate_final_response(conversation_summary, scraped_text, user_text):
     # Format the prompt
     final_prompt = prompt_template.format(
         ai_assistant_name=AI_ASSISTANT_NAME,
-        conversation_summary=conversation_summary,
+        previous_messages=previous_messages,
         scraped_text=scraped_text or "No additional content provided.",
         user_message=user_text
     )
