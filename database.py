@@ -84,7 +84,7 @@ def get_recent_messages_formatted(user_id):
     lines = []
     for msg_content, msg_timestamp, from_me in conversation_history:
         if from_me:
-            speaker = "ME"
+            speaker = "ASSISTANT"
         else:
             speaker = "USER"
         lines.append(f"{speaker}: {msg_content}")
