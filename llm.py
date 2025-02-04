@@ -50,7 +50,7 @@ def _call_openai_api(prompt_text):
 
 def generate_first_time_greeting(user_name, user_message):
     greeting_prompt = f"""\
-You are {AI_ASSISTANT_NAME}, a friendly and helpful AI assistant.
+You are {AI_ASSISTANT_NAME}, a friendly AI (artificial intelligence) assistant.
 This is your first interaction with the user.
 The user has just sent the following message:
 "{user_message}"
@@ -58,7 +58,9 @@ The user has just sent the following message:
 Please greet the user by their name "{user_name}".
 Respond in the same language as the user's message.
 Keep the greeting short and welcoming.
-Remember that you need to mention the fact that you are an AI assistant.
+Tell the user your name and that you are an AI assistant.
+IMPORTANT: Only greet the user, tell your name and the fact that you are an AI assistant.
+Do not provide any additional information.
 """
     return _call_llm_api(greeting_prompt).strip()
 
