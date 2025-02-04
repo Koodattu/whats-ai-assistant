@@ -25,9 +25,9 @@ def scrape_text(url):
                 for li in characteristic_list.find_all("li"):
                     feature_name = li.get_text(strip=True)
                     if "block-icon" in li.get("class", []):
-                        replacements[feature_name] = f"{feature_name}: Ei"
+                        replacements[feature_name] = f"{feature_name}: Ei, "
                     elif "check-icon" in li.get("class", []):
-                        replacements[feature_name] = f"{feature_name}: Kyllä"
+                        replacements[feature_name] = f"{feature_name}: Kyllä, "
                 
                 for key, value in replacements.items():
                     text = text.replace(key, value)
