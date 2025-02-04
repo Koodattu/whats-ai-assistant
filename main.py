@@ -12,6 +12,7 @@ from neonize.events import (
     event
 )
 from neonize.utils import log
+from neonize.utils.enum import Presence
 
 # Import our custom handlers
 from database import init_db
@@ -45,6 +46,7 @@ def main():
 
     @client.event(ConnectedEv)
     def on_connected(client: NewClient, connected: ConnectedEv):
+        client.send_presence(presence=Presence.AVAILABLE)
         log.info("⚡ Connected")
 
     @client.event(HistorySyncEv)
