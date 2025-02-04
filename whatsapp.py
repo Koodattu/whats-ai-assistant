@@ -5,7 +5,7 @@ from neonize.client import NewClient
 from neonize.events import MessageEv, HistorySyncEv
 from neonize.utils.enum import ReceiptType
 from neonize.utils import log
-from database import save_message, get_messages
+from database import save_message, get_messages, delete_messages
 from scraping import scrape_text
 from llm import (
     summarize_conversation,
@@ -76,6 +76,15 @@ def on_message(client: NewClient, message: MessageEv):
         sender=message.Info.MessageSource.Sender,
         receipt=ReceiptType.READ
     )
+
+    # Check if the user wants to clear the conversation history
+    if "_first_message" in text:
+        delete_messages(sender_id)
+        log.info(f"Cleared conversation history for {sender_id} due to '_first_message' command.")
+
+        # Also clear any accumulated scraped content for this user.
+        if sender_id in USER_SCRAPED_CONTENT:
+            USER_SCRAPED_CONTENT[sender_id] = ""
 
     # Check if this is the first message from the user
     previous_messages = get_messages(sender_id)

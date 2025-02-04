@@ -68,3 +68,11 @@ def get_recent_messages(user_id, max_messages):
 
     # Reverse the results to return them in chronological order
     return results[::-1]
+
+def delete_messages(user_id):
+    """Delete all messages for the specified user_id from the database."""
+    conn = sqlite3.connect(CONV_DB_PATH)
+    cursor = conn.cursor()
+    cursor.execute("DELETE FROM messages WHERE user_id = ?", (user_id,))
+    conn.commit()
+    conn.close()
