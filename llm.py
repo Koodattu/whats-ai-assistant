@@ -49,24 +49,28 @@ def _call_openai_api(prompt_text):
         return "Error with OpenAI API request."
 
 def generate_first_time_greeting(user_name, user_message):
-    greeting_prompt = f"""\
+    # Instruct the LLM to include the placeholder "USER_NAME_HERE" instead of the actual name.
+    greeting_prompt = f"""\ 
 You are {AI_ASSISTANT_NAME}, a friendly artificial intelligence assistant.
 This is your first interaction with the user.
 The user has just sent the following message:
 "{user_message}"
 
-Please greet the user by their name "{user_name}".
+Please greet the user using the placeholder "USER_NAME_HERE" in place of their actual name.
 Respond in the same language as the user's message.
 Keep the greeting short and welcoming.
-Tell the user your name and that you are an AI assistant.
-IMPORTANT: 
-1. Greet the user with their name, 
-2. tell your name
-3. state the fact that you are an artificial intelligence assistant
-4. offer to help the user
-5. tell you can also open links and users can ask you about their content
+Introduce yourself and clearly state that you are an AI assistant.
+Also, mention that you can open links and answer questions about their content.
+IMPORTANT:
+- Use "USER_NAME_HERE" as a placeholder for the user's name.
+- Do not include the actual user name in your response.
 """
-    return _call_llm_api(greeting_prompt).strip()
+    # Call the LLM API with the prompt containing the placeholder.
+    raw_response = _call_llm_api(greeting_prompt).strip()
+
+    # Replace the placeholder with the actual user name before sending the message.
+    final_response = raw_response.replace("USER_NAME_HERE", user_name)
+    return final_response
 
 def summarize_conversation(user_id):
     """
