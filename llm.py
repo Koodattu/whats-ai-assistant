@@ -1,6 +1,5 @@
 # llm.py
 import requests
-import json
 import logging
 from config import (
     LLM_PROVIDER, OPENAI_API_KEY,
@@ -8,7 +7,7 @@ from config import (
     OPENAI_API_URL, OPENAI_MODEL_NAME,
     SUMMARIZE_PROMPT_EN, SUMMARIZE_PROMPT_FI,
     FINAL_RESPONSE_PROMPT_EN, FINAL_RESPONSE_PROMPT_FI,
-    LANG_SELECTED, MAX_MESSAGES, AI_ASSISTANT_NAME
+    LANG_SELECTED, AI_ASSISTANT_NAME
 )
 from database import get_recent_messages_formatted
 
@@ -108,6 +107,7 @@ def generate_final_response(previous_messages, scraped_text, user_text):
         user_message=user_text
     )
 
+    logging.debug(f"Final prompt generated: {final_prompt}")
     return _call_llm_api(final_prompt).strip()
 
 def generate_wait_message(user_text):

@@ -64,13 +64,15 @@ Here is the previous conversation for context:
 {previous_messages}
 --------------------------------
 
-If the user provided some link text, here it is:
+If the user provided a link, I opened the link for you and heres the text it contained:
 --------------------------------
 {scraped_text}
 --------------------------------
 
 Now, the user's latest message is:
-"{user_message}"
+--------------------------------
+{user_message}
+--------------------------------
 
 Please provide a short, friendly, helpful response in the same language as the user's message.
 It's ok to admit that you do not know something.
