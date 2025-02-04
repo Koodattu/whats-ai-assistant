@@ -5,7 +5,7 @@ from neonize.client import NewClient
 from neonize.events import MessageEv, HistorySyncEv
 from neonize.utils.enum import ReceiptType
 from neonize.utils import log
-from database import save_message, get_messages, delete_messages, get_recent_messages
+from database import save_message, get_messages, delete_messages, get_recent_messages_formatted
 from scraping import scrape_text
 from llm import (
     summarize_conversation,
@@ -132,7 +132,7 @@ def on_message(client: NewClient, message: MessageEv):
         USER_SCRAPED_CONTENT[sender_id] = f"\n[Scraped from {link}]\n{scraped_content}"
 
     # Summarize the most recent messages
-    conversation_history = get_recent_messages(sender_id)
+    conversation_history = get_recent_messages_formatted(sender_id)
 
     # Generate the final response
     final_answer = generate_final_response(

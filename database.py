@@ -76,3 +76,19 @@ def delete_messages(user_id):
     cursor.execute("DELETE FROM messages WHERE user_id = ?", (user_id,))
     conn.commit()
     conn.close()
+
+def get_recent_messages_formatted(user_id):
+    # Build a minimal text representation of the conversation
+    conversation_history = get_recent_messages(user_id)
+
+    lines = []
+    for msg_content, msg_timestamp, from_me in conversation_history:
+        if from_me:
+            speaker = "ME"
+        else:
+            speaker = "USER"
+        lines.append(f"{speaker}: {msg_content}")
+
+    conversation_text = "\n".join(lines)
+
+    return conversation_text

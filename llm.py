@@ -10,7 +10,7 @@ from config import (
     FINAL_RESPONSE_PROMPT_EN, FINAL_RESPONSE_PROMPT_FI,
     LANG_SELECTED, MAX_MESSAGES, AI_ASSISTANT_NAME
 )
-from database import get_recent_messages
+from database import get_recent_messages_formatted
 
 def _call_llm_api(prompt_text):
     print(f"Calling LLM with prompt: {prompt_text}")
@@ -73,18 +73,7 @@ def summarize_conversation(user_id):
     Summarize the most recent messages for the user into a concise format.
     """
     # Retrieve the most recent messages
-    conversation_history = get_recent_messages(user_id, MAX_MESSAGES)
-
-    # Build a minimal text representation of the conversation
-    lines = []
-    for msg_content, msg_timestamp, from_me in conversation_history:
-        if from_me:
-            speaker = "ME"
-        else:
-            speaker = "USER"
-        lines.append(f"{speaker}: {msg_content}")
-
-    conversation_text = "\n".join(lines)
+    conversation_history = get_recent_messages_formatted
 
     # Choose prompt template based on language
     if LANG_SELECTED == "FI":
@@ -93,7 +82,7 @@ def summarize_conversation(user_id):
         prompt_template = SUMMARIZE_PROMPT_EN
 
     # Format the prompt
-    prompt = prompt_template.format(conversation=conversation_text)
+    prompt = prompt_template.format(conversation=conversation_history)
 
     return _call_llm_api(prompt).strip()
 
