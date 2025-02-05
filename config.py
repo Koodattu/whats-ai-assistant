@@ -3,6 +3,8 @@ import os
 from dotenv import load_dotenv
 load_dotenv()
 
+ADMIN_NUMBER = os.getenv("ADMIN_NUMBER")
+
 # Database Configuration
 CONV_DB_PATH = "db/conversations.sqlite3"
 NEO_DB_PATH = "db/neonize.sqlite3"
@@ -18,8 +20,6 @@ OLLAMA_MODEL_NAME_2 = "hf.co/LumiOpen/Poro-34B-chat-GGUF:Q4_K_M"
 OPENAI_API_URL = "https://api.openai.com/v1/chat/completions"
 OPENAI_MODEL_NAME = "gpt-4o-mini"
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
-
-MAX_MESSAGES = 10  # Maximum number of messages to retrieve for summarization
 
 CONV_DB_PATH = "db/conversations.sqlite3"
 NEO_DB_PATH = "db/neonize.sqlite3"

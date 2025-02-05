@@ -7,11 +7,13 @@ from neonize.utils.enum import ReceiptType
 from neonize.utils import log
 from database import save_message, get_messages, delete_messages, get_recent_messages_formatted
 from scraping import scrape_text
+import os
 from llm import (
     generate_wait_message,
     generate_final_response,
     generate_first_time_greeting
 )
+from config import ADMIN_NUMBER
 
 # A simple in-memory dictionary to store scraped link content per user
 #   { user_id: "accumulated scraped text" }
@@ -61,12 +63,18 @@ def handle_commands(client, chat, sender_id, text):
     matches a specific number, it sends back pre-formatted info and returns True.
     """
     # Example: Only allow commands from a specific sender.
-    ALLOWED_COMMAND_SENDER = "1234567890"  # replace with the specific phone number
-    if sender_id != ALLOWED_COMMAND_SENDER:
+    if sender_id != ADMIN_NUMBER:
+        log.debug(f"Command {text} from {sender_id} not allowed.")
         return False
+    
+    log.debug(f"Command {text} from {sender_id} is allowed.")
 
     if text.startswith("!files"):
-        client.send_message(chat, "[COMMAND] File info: [list of files...]")
+        # Get list of files in the downloads folder
+        downloads_folder = "./downloads"
+        files = os.listdir(downloads_folder)
+        files_list = "\n".join(files)
+        client.send_message(chat, f"[COMMAND] File info: \n{files_list}")
         log.info(f"Processed !files command for {sender_id}.")
         return True
     elif text.startswith("!commands"):
@@ -77,7 +85,19 @@ def handle_commands(client, chat, sender_id, text):
         client.send_message(chat, "[COMMAND] Prompt info: [list of prompt templates...]")
         log.info(f"Processed !prompts command for {sender_id}.")
         return True
-
+    # Check if the user wants to clear the conversation history
+    elif text.startswith("!reset"):
+        client.send_message(chat, "[SYSTEM] Cleared conversation history!")
+        delete_messages(sender_id)
+        log.info(f"Cleared conversation history for {sender_id} due to '!reset' command.")
+        USER_SCRAPED_CONTENT[sender_id] = ""
+        log.debug(f"Cleared scraped content for {sender_id}.")
+        return True
+    elif text.startswith("!"):
+        client.send_message(chat, "[COMMAND] Unknown command.")
+        log.info(f"Processed unknown command for {sender_id}.")
+        return True
+    
     return False
 
 def handle_final_response(client, chat, sender_id, text, conversation_history):
@@ -174,15 +194,7 @@ def on_message(client: NewClient, message: MessageEv):
         if handle_commands(client, chat, sender_id, text):
             # If a command was processed, do not process further.
             return
-
-        # Check if the user wants to clear the conversation history
-        if "!reset" in text:
-            client.send_message(chat, "[SYSTEM] Cleared conversation history!")
-            delete_messages(sender_id)
-            log.info(f"Cleared conversation history for {sender_id} due to '!reset' command.")
-            USER_SCRAPED_CONTENT[sender_id] = ""
-            log.debug(f"Cleared scraped content for {sender_id}.")
-
+        
         # Determine if this is the first message from the user
         previous_messages = get_messages(sender_id)
         is_first_message = len(previous_messages) == 0
