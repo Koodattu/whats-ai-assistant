@@ -1,2 +1,6 @@
 neonize
 python-dotenv
+openai
+sqlite3
+pdfplumber
+python-docx

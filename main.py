@@ -23,23 +23,17 @@ def configure_logging():
     console_handler.setFormatter(formatter)
     logger.addHandler(console_handler)
 
-# In your main() function, call configure_logging() early on
 def main():
     configure_logging()
 
-    # (Optional) If you are using a custom log from neonize.utils, set its level as well.
-    # For example:
     from neonize.utils import log
     log.setLevel(logging.DEBUG)
-
-    # The rest of your main() function remains the same...
     import signal
     from neonize.client import NewClient
     from neonize.events import (
         MessageEv,
         ConnectedEv,
         HistorySyncEv,
-        PairStatusEv,
         event
     )
     from neonize.utils.enum import Presence
@@ -76,12 +70,8 @@ def main():
     def handle_history_sync(client: NewClient, history: HistorySyncEv):
         on_history_sync(client, history)
 
-    @client.event(PairStatusEv)
-    def PairStatusMessage(_: NewClient, message: PairStatusEv):
-        logging.info(f"logged as {message.ID.User}")
-
     @client.event(MessageEv)
-    def PairStatusMessage(client: NewClient, message: MessageEv):
+    def handle_message(client: NewClient, message: MessageEv):
         on_message(client, message)
 
     # Connect the client

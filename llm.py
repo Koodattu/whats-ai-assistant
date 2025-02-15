@@ -1,124 +1,85 @@
-# llm.py
-import requests
 import logging
+import os
 from config import (
-    LLM_PROVIDER, OPENAI_API_KEY,
-    OLLAMA_API_URL, OLLAMA_MODEL_NAME, 
-    OPENAI_API_URL, OPENAI_MODEL_NAME,
-    SUMMARIZE_PROMPT_EN, SUMMARIZE_PROMPT_FI,
-    FINAL_RESPONSE_PROMPT_EN, FINAL_RESPONSE_PROMPT_FI,
-    LANG_SELECTED, AI_ASSISTANT_NAME
+    LLM_PROVIDER, 
+    OPENAI_API_KEY, OPENROUTER_API_KEY, 
+    OLLAMA_MODEL_NAME, OPENAI_MODEL_NAME, OPENROUTER_MODEL_NAME,
+    AI_ASSISTANT_NAME
+)
+from prompts import (
+    GREETING_PROMPT, FINAL_RESPONSE_PROMPT
 )
 from database import get_recent_messages_formatted
+from openai import OpenAI
 
-def _call_llm_api(prompt_text):
-    print(f"Calling LLM with prompt: {prompt_text}")
-    if LLM_PROVIDER == "openai":
-        return _call_openai_api(prompt_text)
-    return _call_local_llm_api(prompt_text)
+def get_client_and_model():
+    """
+    Returns an LLM client configured for the chosen provider.
+    This example uses the OpenAI Python SDK interface for all providers.
+    """
+    if LLM_PROVIDER == "openrouter":
+        return OpenAI(
+            base_url="https://openrouter.ai/api/v1",
+            api_key=OPENROUTER_API_KEY,
+        ), OPENAI_MODEL_NAME
+    elif LLM_PROVIDER == "openai":
+        return OpenAI(
+            api_key=OPENAI_API_KEY,
+        ), OPENROUTER_MODEL_NAME
+    elif LLM_PROVIDER == "ollama":
+        return OpenAI(
+            base_url="http://localhost:11434/api/generate",
+            api_key="ollama",
+        ), OLLAMA_MODEL_NAME
+    else:
+        raise ValueError("Unsupported LLM Provider")
 
-def _call_local_llm_api(prompt_text):
-    payload = {"model": OLLAMA_MODEL_NAME, "prompt": prompt_text, "stream": False}
+def call_llm_api(system_prompt, user_prompt):
+    """
+    Unified function to call the LLM API using the OpenAI Python SDK.
+    """
+    messages = [
+        {"role": "system", "content": system_prompt},
+        {"role": "user", "content": user_prompt},
+    ]
     try:
-        headers = {"Content-Type": "application/json"}
-        response = requests.post(OLLAMA_API_URL, json=payload, headers=headers, timeout=60)
-        if response.status_code == 200:
-            return response.json().get("response", "No response from local model.").strip()
-        logging.error(f"Local LLM Error {response.status_code}: {response.text}")
-        return f"Error: {response.status_code}."
-    except requests.RequestException as e:
-        logging.error(f"Local LLM Request Failed: {e}")
-        return "Error with local LLM request."
-
-def _call_openai_api(prompt_text):
-    payload = {
-        "model": OPENAI_MODEL_NAME,
-        "messages": [{"role": "system", "content": prompt_text}],
-        "stream": False,
-    }
-    try:
-        headers = {"Authorization": f"Bearer {OPENAI_API_KEY}", "Content-Type": "application/json"}
-        response = requests.post(OPENAI_API_URL, json=payload, headers=headers, timeout=60)
-        if response.status_code == 200:
-            return response.json()['choices'][0]['message']['content'].strip()
-        logging.error(f"OpenAI API Error {response.status_code}: {response.text}")
-        return f"Error: {response.status_code}."
-    except requests.RequestException as e:
-        logging.error(f"OpenAI API Request Failed: {e}")
-        return "Error with OpenAI API request."
+        # Call the chat completions endpoint using the client
+        client, model = get_client_and_model()
+        response = client.chat.completions.create(
+            model=model,
+            messages=messages,
+            max_tokens=100,
+        )
+        # Correctly access the response content
+        return response.choices[0].message.content
+    except Exception as e:
+        print(f"Error calling LLM API: {e}")
+        return ""
 
 def generate_first_time_greeting(user_name, user_message):
-    # Instruct the LLM to include the placeholder "USER_NAME_HERE" instead of the actual name.
-    greeting_prompt = f"""\ 
-You are {AI_ASSISTANT_NAME}, a friendly artificial intelligence assistant.
-This is your first interaction with the user.
-The user has just sent the following message:
-"{user_message}"
-
-Please greet the user using the placeholder "USER_NAME_HERE" in place of their actual name.
-Respond in the same language as the user's message.
-Keep the greeting short and welcoming.
-Introduce yourself and clearly state that you are an AI assistant.
-Also, mention that you can open links and answer questions about their content.
-IMPORTANT:
-- Use "USER_NAME_HERE" as a placeholder for the user's name.
-- Do not include the actual user name in your response.
-"""
+    """
+    Generate the first-time greeting for the user.
+    """
     # Call the LLM API with the prompt containing the placeholder.
-    raw_response = _call_llm_api(greeting_prompt).strip()
-
+    system_prompt = GREETING_PROMPT.format(ai_assistant_name=AI_ASSISTANT_NAME)
+    raw_response = call_llm_api(system_prompt, user_message)
     # Replace the placeholder with the actual user name before sending the message.
     final_response = raw_response.replace("USER_NAME_HERE", user_name)
     return final_response
 
-def summarize_conversation(user_id):
-    """
-    Summarize the most recent messages for the user into a concise format.
-    """
-    # Retrieve the most recent messages
-    conversation_history = get_recent_messages_formatted
-
-    # Choose prompt template based on language
-    if LANG_SELECTED == "FI":
-        prompt_template = SUMMARIZE_PROMPT_FI
-    else:
-        prompt_template = SUMMARIZE_PROMPT_EN
-
-    # Format the prompt
-    prompt = prompt_template.format(conversation=conversation_history)
-
-    return _call_llm_api(prompt).strip()
-
-def generate_final_response(previous_messages, scraped_text, user_text):
+def generate_final_response(user_id, scraped_text, user_text):
     """
     Generate the final response for the user.
     """
-    # Choose prompt template based on language
-    if LANG_SELECTED == "FI":
-        prompt_template = FINAL_RESPONSE_PROMPT_FI
-    else:
-        prompt_template = FINAL_RESPONSE_PROMPT_EN
-
-    # Format the prompt
-    final_prompt = prompt_template.format(
+    # read all contents from all text files inside converted folder
+    additional_content = ""
+    for file in os.listdir("converted"):
+        with open(os.path.join(scraped_text, file), "r") as f:
+            additional_content += f.read()
+    conversation_history = get_recent_messages_formatted(user_id)
+    system_prompt = FINAL_RESPONSE_PROMPT.format(
         ai_assistant_name=AI_ASSISTANT_NAME,
-        previous_messages=previous_messages,
-        scraped_text=scraped_text or "No additional content provided.",
-        user_message=user_text
+        previous_messages=conversation_history,
+        additional_content=additional_content or "No additional content provided.",
     )
-
-    logging.debug(f"Final prompt generated: {final_prompt}")
-    return _call_llm_api(final_prompt).strip()
-
-def generate_wait_message(user_text):
-    prompt = f"""\
-You are a language expert. The user has just sent the following message:
-\"{user_text}\"
-
-Please produce exactly one short sentence that says something along the lines of:
-"Please wait while I check the link..."
-but in the same language the user wrote in. Keep it very short.
-"""
-
-    result = _call_llm_api(prompt)
-    return result.strip()
+    return call_llm_api(system_prompt, user_text)

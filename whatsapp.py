@@ -1,73 +1,101 @@
-# whatsapp.py
-import re
+import sys
 import time
 from neonize.client import NewClient
 from neonize.events import MessageEv, HistorySyncEv
 from neonize.utils.enum import ReceiptType
 from neonize.utils import log
-from database import save_message, get_messages, delete_messages, get_recent_messages_formatted
-from scraping import scrape_text
+from database import save_message, get_messages, delete_messages
 import os
 from llm import (
-    generate_wait_message,
     generate_final_response,
     generate_first_time_greeting
 )
 from config import ADMIN_NUMBER
+import pdfplumber
+from docx import Document
+from prompts import GREETING_PROMPT, FINAL_RESPONSE_PROMPT
 
-# A simple in-memory dictionary to store scraped link content per user
-#   { user_id: "accumulated scraped text" }
-USER_SCRAPED_CONTENT = {}
+is_bot_running = True
 
 # --- Helper functions ---
+def convert_pdf_to_markdown(pdf_path):
+    """Converts a PDF file to markdown text."""
+    try:
+        with pdfplumber.open(pdf_path) as pdf:
+            markdown_lines = []
+            for page_num, page in enumerate(pdf.pages, start=1):
+                markdown_lines.append(f"## Page {page_num}\n")
+                text = page.extract_text()
+                if text:
+                    markdown_lines.append(text.strip() + "\n")
+                else:
+                    markdown_lines.append("*(No text could be extracted from this page)*\n")
+            return "\n".join(markdown_lines)
+    except Exception as e:
+        return f"Error reading PDF: {e}"
 
-def handle_greeting(client, chat, sender_id, sender_name, text):
+def convert_docx_to_markdown(docx_path):
+    """Converts a DOCX file to markdown text."""
+    try:
+        document = Document(docx_path)
+        markdown_text = ""
+        for paragraph in document.paragraphs:
+            markdown_text += paragraph.text + "\n"
+        return markdown_text
+    except Exception as e:
+        return f"Error reading DOCX: {e}"
+
+def handle_greeting(client: NewClient, chat, sender_id, sender_name, text):
     """Handles first-time greeting for a new conversation."""
     greeting = generate_first_time_greeting(sender_name, text)
     client.send_message(chat, greeting)
     log.info(f"Sent greeting to {sender_name} ({sender_id}).")
     save_message(sender_id, greeting, int(time.time()), True)
 
-def handle_link(client, message, sender_id, sender_name, text):
-    """Handles link detection and scraping."""
-    url_pattern = r'(https?://\S+)'
-    links_found = re.findall(url_pattern, text)
-    if not links_found:
-        return
-
-    link = links_found[0]
-    log.info(f"Link detected: {link}")
-
-    # Send wait message
-    wait_message = generate_wait_message(text)
-    client.reply_message(wait_message, message)
-    save_message(sender_id, wait_message, int(time.time()), True)
-    log.info(f"Sent wait message to {sender_name} for link processing: {wait_message}")
-
-    # Scrape the link and store the content
-    scraped_content = scrape_text(link)
-    log.debug(f"Scraped content (first 200 chars): {scraped_content[:200]}...")
-    USER_SCRAPED_CONTENT[sender_id] = f"\n[Scraped from {link}]\n{scraped_content}"
-    log.info(f"Updated scraped content for {sender_id}.")
-
-def handle_file(client, message):
+def handle_file(client: NewClient, message):
     """Handles file attachments (downloads the file)."""
     file_name = (message.Message.documentMessage.fileName or
                  message.Message.imageMessage.fileName or "file")
     client.download_any(message=message.Message, path=f"./downloads/{file_name}")
     log.info(f"Downloaded file: {file_name}")
+    
+    file_extension = os.path.splitext(file_name)[1].lower()
 
-def handle_commands(client, chat, sender_id, text):
+    if file_extension == ".pdf":
+        submission_markdown = convert_pdf_to_markdown(f"./downloads/{file_name}")
+    elif file_extension == ".docx":
+        submission_markdown = convert_docx_to_markdown(f"./downloads/{file_name}")
+    elif file_extension == ".txt":
+        with open(f"./downloads/{file_name}", "r", encoding="utf-8") as f:
+            submission_markdown = f.read()
+    else:
+        client.send_message(message.Info.MessageSource.Chat, f"Unsupported file type: {file_extension}")
+        return
+
+    base_filename = os.path.splitext(os.path.basename(file_name))[0]
+    txt_filename = f"{base_filename}.txt"
+    txt_filepath = os.path.join("converted", txt_filename)
+    try:
+        with open(txt_filepath, "w", encoding="utf-8") as f:
+            f.write(submission_markdown)
+        print(f"Converted file saved to: {txt_filepath}")
+        client.send_message(message.Info.MessageSource.Chat, f"Converted file saved to: {txt_filename}")
+    except Exception as e:
+        print(f"Error saving redacted submission: {e}")
+        client.send_message(message.Info.MessageSource.Chat, f"Error saving converted file: {e}")
+
+def handle_commands(client: NewClient, chat, sender_id, text: str) -> bool:
     """
     Checks for special commands. If one of the commands is detected and the sender's number
     matches a specific number, it sends back pre-formatted info and returns True.
     """
     # Example: Only allow commands from a specific sender.
     if sender_id != ADMIN_NUMBER:
-        log.debug(f"Command {text} from {sender_id} not allowed.")
+        log.info(f"Command {text} from {sender_id} not allowed.")
         return False
     
-    log.debug(f"Command {text} from {sender_id} is allowed.")
+    log.info(f"Command {text} from {sender_id} is allowed.")
+    global is_bot_running
 
     if text.startswith("!files"):
         # Get list of files in the downloads folder
@@ -78,20 +106,34 @@ def handle_commands(client, chat, sender_id, text):
         log.info(f"Processed !files command for {sender_id}.")
         return True
     elif text.startswith("!commands"):
-        client.send_message(chat, "[COMMAND] Available commands: !files, !commands, !prompts")
+        commands = ["!files - List files in the downloads folder", "!commands - Show available commands", "!prompts - Show available prompts", "!reset - Clear conversation history", "!pause - Pause the bot", "!resume - Resume the bot", "!stop - Stop the bot"]
+        client.send_message(chat, f"[COMMAND] Available commands:\n {"\n".join(commands)}")
         log.info(f"Processed !commands command for {sender_id}.")
         return True
     elif text.startswith("!prompts"):
-        client.send_message(chat, "[COMMAND] Prompt info: [list of prompt templates...]")
+        prompts = [f"First time greeting prompt: {GREETING_PROMPT}", f"Prompt for generating responses: {FINAL_RESPONSE_PROMPT}"]
+        client.send_message(chat, f"[COMMAND] Prompts:\n {"\n\n".join(prompts)}")
         log.info(f"Processed !prompts command for {sender_id}.")
         return True
-    # Check if the user wants to clear the conversation history
     elif text.startswith("!reset"):
-        client.send_message(chat, "[SYSTEM] Cleared conversation history!")
+        client.send_message(chat, "[COMMAND] Cleared conversation history!")
         delete_messages(sender_id)
         log.info(f"Cleared conversation history for {sender_id} due to '!reset' command.")
-        USER_SCRAPED_CONTENT[sender_id] = ""
-        log.debug(f"Cleared scraped content for {sender_id}.")
+        return True
+    elif text.startswith("!pause"):
+        client.send_message(chat, "[COMMAND] The bot is now paused!")
+        is_bot_running = False
+        log.info(f"Processed !pause command for {sender_id}.")
+        return True
+    elif text.startswith("!resume"):
+        client.send_message(chat, "[COMMAND] The bot has now resumed operations!")
+        is_bot_running = True
+        log.info(f"Processed !resume command for {sender_id}.")
+        return True
+    elif text.startswith("!stop"):
+        client.send_message(chat, "[COMMAND] The bot is shutting down!")
+        sys.exit(0)
+        log.info(f"Processed !stop command for {sender_id}.")
         return True
     elif text.startswith("!"):
         client.send_message(chat, "[COMMAND] Unknown command.")
@@ -100,11 +142,10 @@ def handle_commands(client, chat, sender_id, text):
     
     return False
 
-def handle_final_response(client, chat, sender_id, text, conversation_history):
+def handle_final_response(client: NewClient, chat, sender_id, text):
     """Generates and sends the final response using the LLM."""
     final_answer = generate_final_response(
-        previous_messages=conversation_history,
-        scraped_text=USER_SCRAPED_CONTENT.get(sender_id, ""),
+        user_id=sender_id,
         user_text=text
     )
     log.debug(f"Final answer generated: {final_answer}")
@@ -112,9 +153,7 @@ def handle_final_response(client, chat, sender_id, text, conversation_history):
     save_message(sender_id, final_answer, int(time.time()), True)
     log.info(f"Sent final response to {sender_id}.")
 
-# --- Main event handlers ---
-
-def on_history_sync(client, history: HistorySyncEv):
+def on_history_sync(client: NewClient, history: HistorySyncEv):
     """
     Processes historical messages from the sync data, storing them in the DB.
     The data structure is at `history.Data.conversations[...]`.
@@ -168,17 +207,10 @@ def on_message(client: NewClient, message: MessageEv):
         sender_name = message.Info.Pushname or "User"
 
         log.info(f"Message from {sender_name} ({sender_id}): {text}")
-        log.debug(f"Raw message info: {message}")
-
-        # Save raw message object to a file
-        message_filename = f"messages/{int(time.time())}.txt"
-        with open(message_filename, "w", encoding="utf-8") as file:
-            file.write(str(message))
-        log.debug(f"Saved raw message to {message_filename}")
 
         # Check if the message is older than one minute
         if time.time() - timestamp > 60:
-            log.info(f"Message from {sender_name} ({sender_id}) is older than one minute; skipping further processing.")
+            log.info(f"Message from {sender_name} ({sender_id}) is older than one minute; skipping.")
             return
 
         # Mark as read
@@ -190,37 +222,35 @@ def on_message(client: NewClient, message: MessageEv):
         )
         log.debug(f"Marked message {message.Info.ID} as read.")
 
+        # Save the incoming message to the DB
+        save_message(sender_id, text, timestamp, from_me)
+        log.debug(f"Saved incoming message for user {sender_id} at timestamp {timestamp}.")
+
         # Check for a command and process it if present.
         if handle_commands(client, chat, sender_id, text):
             # If a command was processed, do not process further.
             return
         
+        if not is_bot_running:
+            log.info("Bot is paused; skipping message processing.")
+            return
+
         # Determine if this is the first message from the user
         previous_messages = get_messages(sender_id)
         is_first_message = len(previous_messages) == 0
         log.debug(f"User {sender_id} has {len(previous_messages)} previous messages; is_first_message={is_first_message}")
 
-        # Save the incoming message to the DB
-        save_message(sender_id, text, timestamp, from_me)
-        log.debug(f"Saved incoming message for user {sender_id} at timestamp {timestamp}.")
-
         # Process greeting for a first-time message
         if is_first_message:
             handle_greeting(client, chat, sender_id, sender_name, text)
 
-        # Process links (if any)
-        handle_link(client, message, sender_id, sender_name, text)
-
         # Process file attachments if present
         if message.Info.Type == "media" and not message.Info.MediaType == "url":
             handle_file(client, message)
-
-        # Retrieve a formatted conversation history for context
-        conversation_history = get_recent_messages_formatted(sender_id)
-        log.debug(f"Retrieved conversation history for {sender_id}: {conversation_history}")
+            return
 
         log.info(f"Generating final response for {sender_id}...")
-        handle_final_response(client, chat, sender_id, text, conversation_history)
+        handle_final_response(client, chat, sender_id, text)
 
     except Exception as e:
         log.error(f"Error in on_message handler: {e}")
