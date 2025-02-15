@@ -9,12 +9,17 @@ from llm import (
     generate_final_response,
     generate_first_time_greeting
 )
-from config import ADMIN_NUMBER
+from config import ADMIN_NUMBER, AI_ASSISTANT_NAME
 import pdfplumber
 from docx import Document
 from prompts import GREETING_PROMPT, FINAL_RESPONSE_PROMPT
 
 is_bot_running = True
+custom_prompts = {
+    "greeting": GREETING_PROMPT,
+    "final_response": FINAL_RESPONSE_PROMPT
+}
+bot_name = AI_ASSISTANT_NAME
 
 # --- Helper functions ---
 def convert_pdf_to_markdown(pdf_path):
@@ -46,7 +51,7 @@ def convert_docx_to_markdown(docx_path):
 
 def handle_greeting(client: NewClient, chat, sender_id, sender_name, text):
     """Handles first-time greeting for a new conversation."""
-    greeting = generate_first_time_greeting(sender_name, text)
+    greeting = generate_first_time_greeting(sender_name, text, custom_prompts["greeting"])
     client.send_message(chat, greeting)
     log.info(f"Sent greeting to {sender_name} ({sender_id}).")
     save_message(sender_id, greeting, int(time.time()), True)
@@ -102,7 +107,7 @@ def handle_commands(client: NewClient, chat, sender_id, text: str) -> bool:
         return False
     
     log.info(f"Command {text} from {sender_id} is allowed.")
-    global is_bot_running
+    global is_bot_running, custom_prompts, bot_name
 
     if text.startswith("!files"):
         # Get list of files in the downloads folder
@@ -137,19 +142,45 @@ def handle_commands(client: NewClient, chat, sender_id, text: str) -> bool:
                     "!files - List files in the downloads folder",
                     "!removefile <filename> - Remove a file from the downloads folder",
                     "!prompts - Show available prompts", 
-                    "!reset - Clear conversation history", 
+                    "!editprompt <prompt_name> <new_prompt_content> - Edit a prompt",
+                    "!renamebot <new_bot_name> - Rename the bot",
+                    "!reset - Clear conversation history for your number", 
                     "!pause - Pause the bot", 
                     "!resume - Resume the bot", 
-                    "!stop - Stop the bot"]
+                    "!permanentstop - Stop the bot permanently"]
         commands_joined = "\n".join(commands)
         client.send_message(chat, f"[COMMAND] Available commands:\n{commands_joined}")
         log.info(f"Processed !commands command for {sender_id}.")
         return True
     elif text.startswith("!prompts"):
-        prompts = [f"First time greeting prompt: {GREETING_PROMPT}", f"Prompt for generating responses: {FINAL_RESPONSE_PROMPT}"]
+        prompts = [f"greeting: {custom_prompts['greeting']}", f"final_response: {custom_prompts['final_response']}"]
         prompts_joined = "\n".join(prompts)
-        client.send_message(chat, f"[COMMAND] Prompts:\n{prompts_joined}")
+        client.send_message(chat, f"[COMMAND] Prompts:\n\n{prompts_joined}")
         log.info(f"Processed !prompts command for {sender_id}.")
+        return True
+    elif text.startswith("!editprompt"):
+        parts = text.split(" ", 2)
+        if len(parts) < 3:
+            client.send_message(chat, "[COMMAND] Please provide a prompt name and new prompt content.")
+            return True
+        prompt_name = parts[1]
+        new_prompt_content = parts[2]
+        if prompt_name not in custom_prompts:
+            client.send_message(chat, f"[COMMAND] Unknown prompt: {prompt_name}. Please use !prompts to see available prompts.")
+            return True
+        custom_prompts[prompt_name] = new_prompt_content
+        client.send_message(chat, f"[COMMAND] Updated prompt {prompt_name}.")
+        log.info(f"Processed !editprompt command for {sender_id} and prompt {prompt_name}.")
+        return True
+    elif text.startswith("!renamebot"):
+        parts = text.split(" ", 1)
+        if len(parts) < 2:
+            client.send_message(chat, "[COMMAND] Please provide a new bot name.")
+            return True
+        new_bot_name = parts[1]
+        bot_name = new_bot_name
+        client.send_message(chat, f"[COMMAND] Bot name updated to: {new_bot_name}.")
+        log.info(f"Processed !renamebot command for {sender_id}.")
         return True
     elif text.startswith("!reset"):
         client.send_message(chat, "[COMMAND] Cleared conversation history!")
@@ -166,9 +197,9 @@ def handle_commands(client: NewClient, chat, sender_id, text: str) -> bool:
         is_bot_running = True
         log.info(f"Processed !resume command for {sender_id}.")
         return True
-    elif text.startswith("!stop"):
+    elif text.startswith("!permanentstop"):
         client.send_message(chat, "[COMMAND] The bot is shutting down!")
-        log.info(f"Processed !stop command for {sender_id}.")
+        log.info(f"Processed !permanentstop command for {sender_id}.")
         os._exit(0)
         return True
     elif text.startswith("!"):
@@ -182,7 +213,8 @@ def handle_final_response(client: NewClient, chat, sender_id, text):
     """Generates and sends the final response using the LLM."""
     final_answer = generate_final_response(
         user_id=sender_id,
-        user_text=text
+        user_text=text,
+        custom_prompt=custom_prompts["final_response"]
     )
     log.debug(f"Final answer generated: {final_answer}")
     if not final_answer.strip():

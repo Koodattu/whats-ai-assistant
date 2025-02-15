@@ -7,7 +7,7 @@ from config import (
     AI_ASSISTANT_NAME
 )
 from prompts import (
-    GREETING_PROMPT, FINAL_RESPONSE_PROMPT
+    GREETING_PROMPT_ADDITIONAL, FINAL_RESPONSE_PROMPT_ADDITIONAL
 )
 from database import get_recent_messages_formatted
 from openai import OpenAI
@@ -56,18 +56,18 @@ def call_llm_api(system_prompt, user_prompt):
         print(f"Error calling LLM API: {e}")
         return ""
 
-def generate_first_time_greeting(user_name, user_message):
+def generate_first_time_greeting(user_name, user_message, custom_prompt):
     """
     Generate the first-time greeting for the user.
     """
     # Call the LLM API with the prompt containing the placeholder.
-    system_prompt = GREETING_PROMPT.format(ai_assistant_name=AI_ASSISTANT_NAME)
+    system_prompt = (custom_prompt + "\n" + GREETING_PROMPT_ADDITIONAL).format(ai_assistant_name=AI_ASSISTANT_NAME) 
     raw_response = call_llm_api(system_prompt, user_message)
     # Replace the placeholder with the actual user name before sending the message.
     final_response = raw_response.replace("USER_NAME_HERE", user_name)
     return final_response
 
-def generate_final_response(user_id, user_text):
+def generate_final_response(user_id, user_text, custom_prompt):
     """
     Generate the final response for the user.
     """
@@ -77,7 +77,7 @@ def generate_final_response(user_id, user_text):
     for file in os.listdir("converted"):
         with open(os.path.join("converted", file), "r", encoding="utf-8", errors="replace") as f:
             additional_content += f.read()
-    system_prompt = FINAL_RESPONSE_PROMPT.format(
+    system_prompt = (custom_prompt + "\n" + FINAL_RESPONSE_PROMPT_ADDITIONAL).format(
         ai_assistant_name=AI_ASSISTANT_NAME,
         previous_messages=conversation_history,
         additional_content=additional_content or "No additional content provided.",
