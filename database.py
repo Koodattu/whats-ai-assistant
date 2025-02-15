@@ -80,7 +80,6 @@ def delete_messages(user_id):
 def get_recent_messages_formatted(user_id):
     # Build a minimal text representation of the conversation
     conversation_history = get_recent_messages(user_id)
-
     lines = []
     for msg_content, msg_timestamp, from_me in conversation_history:
         if from_me:

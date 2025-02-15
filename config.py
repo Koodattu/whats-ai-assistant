@@ -6,8 +6,8 @@ load_dotenv()
 CONV_DB_PATH = "db/conversations.sqlite3"
 NEO_DB_PATH = "db/neonize.sqlite3"
 
-# "ollama" or "openai"
-LLM_PROVIDER = "openai"
+# "ollama" or "openai" or "openrouter"
+LLM_PROVIDER = "openrouter"
 
 # Local Language Model Configuration
 OLLAMA_MODEL_NAME = "hf.co/itlwas/Ahma-7B-Instruct-Q4_K_M-GGUF:latest"

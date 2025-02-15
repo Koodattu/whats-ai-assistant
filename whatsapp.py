@@ -1,4 +1,3 @@
-import sys
 import time
 from neonize.client import NewClient
 from neonize.events import MessageEv, HistorySyncEv
@@ -52,8 +51,12 @@ def handle_greeting(client: NewClient, chat, sender_id, sender_name, text):
     log.info(f"Sent greeting to {sender_name} ({sender_id}).")
     save_message(sender_id, greeting, int(time.time()), True)
 
-def handle_file(client: NewClient, message):
+def handle_file(client: NewClient, sender_id, message):
     """Handles file attachments (downloads the file)."""
+    if sender_id != ADMIN_NUMBER:
+        log.info(f"Files from {sender_id} are not allowed.")
+        return False
+
     file_name = (message.Message.documentMessage.fileName or
                  message.Message.imageMessage.fileName or "file")
     client.download_any(message=message.Message, path=f"./downloads/{file_name}")
@@ -69,7 +72,7 @@ def handle_file(client: NewClient, message):
         with open(f"./downloads/{file_name}", "r", encoding="utf-8") as f:
             submission_markdown = f.read()
     else:
-        client.send_message(message.Info.MessageSource.Chat, f"Unsupported file type: {file_extension}")
+        client.send_message(message.Info.MessageSource.Chat, f"[SYSTEM] Unsupported file type: {file_extension}")
         return
 
     base_filename = os.path.splitext(os.path.basename(file_name))[0]
@@ -79,17 +82,21 @@ def handle_file(client: NewClient, message):
         with open(txt_filepath, "w", encoding="utf-8") as f:
             f.write(submission_markdown)
         print(f"Converted file saved to: {txt_filepath}")
-        client.send_message(message.Info.MessageSource.Chat, f"Converted file saved to: {txt_filename}")
+        client.send_message(message.Info.MessageSource.Chat, f"[SYSTEM] File is saved and will be injected into context.")
     except Exception as e:
         print(f"Error saving redacted submission: {e}")
-        client.send_message(message.Info.MessageSource.Chat, f"Error saving converted file: {e}")
+        client.send_message(message.Info.MessageSource.Chat, f"[SYSTEM] Error saving file: {e}")
+
+    return True
 
 def handle_commands(client: NewClient, chat, sender_id, text: str) -> bool:
     """
     Checks for special commands. If one of the commands is detected and the sender's number
     matches a specific number, it sends back pre-formatted info and returns True.
     """
-    # Example: Only allow commands from a specific sender.
+    if not text.startswith("!") or not text.strip():
+        return
+
     if sender_id != ADMIN_NUMBER:
         log.info(f"Command {text} from {sender_id} not allowed.")
         return False
@@ -102,17 +109,46 @@ def handle_commands(client: NewClient, chat, sender_id, text: str) -> bool:
         downloads_folder = "./downloads"
         files = os.listdir(downloads_folder)
         files_list = "\n".join(files)
-        client.send_message(chat, f"[COMMAND] File info: \n{files_list}")
+        client.send_message(chat, f"[COMMAND] Files in folder:\n{files_list}")
         log.info(f"Processed !files command for {sender_id}.")
         return True
+    elif text.startswith("!removefile"):
+        # Remove a file from the downloads folder
+        parts = text.split(" ", 1)
+        if len(parts) < 2:
+            client.send_message(chat, "[COMMAND] Please provide a filename to remove.")
+            return True
+        filename = parts[1]
+        dl_path = os.path.join("./downloads", filename)
+        base_filename = os.path.splitext(os.path.basename(filename))[0]
+        txt_filename = f"{base_filename}.txt"
+        conv_path = os.path.join("./converted", txt_filename)
+        if os.path.exists(dl_path):
+            os.remove(dl_path)
+            if os.path.exists(conv_path):
+                os.remove(conv_path)
+            client.send_message(chat, f"[COMMAND] Removed file: {filename}")
+        else:
+            client.send_message(chat, f"[COMMAND] File not found: {filename}")
+        log.info(f"Processed !removefile command for {sender_id} and file {filename}.")
+        return True
     elif text.startswith("!commands"):
-        commands = ["!files - List files in the downloads folder", "!commands - Show available commands", "!prompts - Show available prompts", "!reset - Clear conversation history", "!pause - Pause the bot", "!resume - Resume the bot", "!stop - Stop the bot"]
-        client.send_message(chat, f"[COMMAND] Available commands:\n {"\n".join(commands)}")
+        commands = ["!commands - Show available commands", 
+                    "!files - List files in the downloads folder",
+                    "!removefile <filename> - Remove a file from the downloads folder",
+                    "!prompts - Show available prompts", 
+                    "!reset - Clear conversation history", 
+                    "!pause - Pause the bot", 
+                    "!resume - Resume the bot", 
+                    "!stop - Stop the bot"]
+        commands_joined = "\n".join(commands)
+        client.send_message(chat, f"[COMMAND] Available commands:\n{commands_joined}")
         log.info(f"Processed !commands command for {sender_id}.")
         return True
     elif text.startswith("!prompts"):
         prompts = [f"First time greeting prompt: {GREETING_PROMPT}", f"Prompt for generating responses: {FINAL_RESPONSE_PROMPT}"]
-        client.send_message(chat, f"[COMMAND] Prompts:\n {"\n\n".join(prompts)}")
+        prompts_joined = "\n".join(prompts)
+        client.send_message(chat, f"[COMMAND] Prompts:\n{prompts_joined}")
         log.info(f"Processed !prompts command for {sender_id}.")
         return True
     elif text.startswith("!reset"):
@@ -132,11 +168,11 @@ def handle_commands(client: NewClient, chat, sender_id, text: str) -> bool:
         return True
     elif text.startswith("!stop"):
         client.send_message(chat, "[COMMAND] The bot is shutting down!")
-        sys.exit(0)
         log.info(f"Processed !stop command for {sender_id}.")
+        os._exit(0)
         return True
     elif text.startswith("!"):
-        client.send_message(chat, "[COMMAND] Unknown command.")
+        client.send_message(chat, "[COMMAND] Unknown command. Please use !commands to see available commands.")
         log.info(f"Processed unknown command for {sender_id}.")
         return True
     
@@ -149,6 +185,10 @@ def handle_final_response(client: NewClient, chat, sender_id, text):
         user_text=text
     )
     log.debug(f"Final answer generated: {final_answer}")
+    if not final_answer.strip():
+        log.info(f"No final response generated for {sender_id}.")
+        client.send_message(chat, "I'm sorry, I couldn't generate a response for you.")
+        return
     client.send_message(chat, final_answer)
     save_message(sender_id, final_answer, int(time.time()), True)
     log.info(f"Sent final response to {sender_id}.")
@@ -231,6 +271,11 @@ def on_message(client: NewClient, message: MessageEv):
             # If a command was processed, do not process further.
             return
         
+        # Process file attachments if present
+        if message.Info.Type == "media" and not message.Info.MediaType == "url":
+            if handle_file(client, sender_id, message):
+                return
+
         if not is_bot_running:
             log.info("Bot is paused; skipping message processing.")
             return
@@ -243,11 +288,6 @@ def on_message(client: NewClient, message: MessageEv):
         # Process greeting for a first-time message
         if is_first_message:
             handle_greeting(client, chat, sender_id, sender_name, text)
-
-        # Process file attachments if present
-        if message.Info.Type == "media" and not message.Info.MediaType == "url":
-            handle_file(client, message)
-            return
 
         log.info(f"Generating final response for {sender_id}...")
         handle_final_response(client, chat, sender_id, text)

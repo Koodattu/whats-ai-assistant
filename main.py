@@ -38,8 +38,8 @@ def main():
     )
     from neonize.utils.enum import Presence
     from database import init_db
-    from whatsapp import on_message, on_history_sync, on_message
     from config import CONV_DB_PATH, NEO_DB_PATH
+    from whatsapp import on_history_sync, on_message
 
     # A global event to handle interrupts
     stop_event = event
@@ -54,6 +54,7 @@ def main():
     os.makedirs(os.path.dirname(CONV_DB_PATH), exist_ok=True)
     os.makedirs("messages", exist_ok=True)
     os.makedirs("downloads", exist_ok=True)
+    os.makedirs("converted", exist_ok=True)
 
     # Initialize DB
     init_db()

@@ -1,4 +1,4 @@
-import logging
+from neonize.utils import log
 import os
 from config import (
     LLM_PROVIDER, 
@@ -67,16 +67,16 @@ def generate_first_time_greeting(user_name, user_message):
     final_response = raw_response.replace("USER_NAME_HERE", user_name)
     return final_response
 
-def generate_final_response(user_id, scraped_text, user_text):
+def generate_final_response(user_id, user_text):
     """
     Generate the final response for the user.
     """
     # read all contents from all text files inside converted folder
+    conversation_history = get_recent_messages_formatted(user_id)
     additional_content = ""
     for file in os.listdir("converted"):
-        with open(os.path.join(scraped_text, file), "r") as f:
+        with open(os.path.join("converted", file), "r", encoding="utf-8", errors="replace") as f:
             additional_content += f.read()
-    conversation_history = get_recent_messages_formatted(user_id)
     system_prompt = FINAL_RESPONSE_PROMPT.format(
         ai_assistant_name=AI_ASSISTANT_NAME,
         previous_messages=conversation_history,
