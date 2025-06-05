@@ -66,7 +66,7 @@ def handle_file(client: NewClient, sender_id, message):
                  message.Message.imageMessage.fileName or "file")
     client.download_any(message=message.Message, path=f"./downloads/{file_name}")
     log.info(f"Downloaded file: {file_name}")
-    
+
     file_extension = os.path.splitext(file_name)[1].lower()
 
     if file_extension == ".pdf":
@@ -105,7 +105,7 @@ def handle_commands(client: NewClient, chat, sender_id, text: str) -> bool:
     if sender_id != ADMIN_NUMBER:
         log.info(f"Command {text} from {sender_id} not allowed.")
         return False
-    
+
     log.info(f"Command {text} from {sender_id} is allowed.")
     global is_bot_running, custom_prompts, bot_name
 
@@ -138,15 +138,15 @@ def handle_commands(client: NewClient, chat, sender_id, text: str) -> bool:
         log.info(f"Processed !removefile command for {sender_id} and file {filename}.")
         return True
     elif text.startswith("!commands"):
-        commands = ["!commands - Show available commands", 
+        commands = ["!commands - Show available commands",
                     "!files - List files in the downloads folder",
                     "!removefile <filename> - Remove a file from the downloads folder",
-                    "!prompts - Show available prompts", 
+                    "!prompts - Show available prompts",
                     "!editprompt <prompt_name> <new_prompt_content> - Edit a prompt",
                     "!renamebot <new_bot_name> - Rename the bot",
-                    "!reset - Clear conversation history for your number", 
-                    "!pause - Pause the bot", 
-                    "!resume - Resume the bot", 
+                    "!reset - Clear conversation history for your number",
+                    "!pause - Pause the bot",
+                    "!resume - Resume the bot",
                     "!permanentstop - Stop the bot permanently"]
         commands_joined = "\n".join(commands)
         client.send_message(chat, f"[COMMAND] Available commands:\n{commands_joined}")
@@ -206,7 +206,7 @@ def handle_commands(client: NewClient, chat, sender_id, text: str) -> bool:
         client.send_message(chat, "[COMMAND] Unknown command. Please use !commands to see available commands.")
         log.info(f"Processed unknown command for {sender_id}.")
         return True
-    
+
     return False
 
 def handle_final_response(client: NewClient, chat, sender_id, text):
@@ -219,7 +219,7 @@ def handle_final_response(client: NewClient, chat, sender_id, text):
     log.debug(f"Final answer generated: {final_answer}")
     if not final_answer.strip():
         log.info(f"No final response generated for {sender_id}.")
-        client.send_message(chat, "I'm sorry, I couldn't generate a response for you.")
+        #client.send_message(chat, "I'm sorry, I couldn't generate a response for you.")
         return
     client.send_message(chat, final_answer)
     save_message(sender_id, final_answer, int(time.time()), True)
@@ -302,7 +302,7 @@ def on_message(client: NewClient, message: MessageEv):
         if handle_commands(client, chat, sender_id, text):
             # If a command was processed, do not process further.
             return
-        
+
         # Process file attachments if present
         if message.Info.Type == "media" and not message.Info.MediaType == "url":
             if handle_file(client, sender_id, message):
