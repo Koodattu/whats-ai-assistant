@@ -4,3 +4,4 @@ openai
 sqlite3
 pdfplumber
 python-docx
+segno

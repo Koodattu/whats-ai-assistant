@@ -1,5 +1,6 @@
 import logging
 import os
+import segno
 
 def configure_logging():
     # Create a logger
@@ -34,6 +35,7 @@ def main():
         MessageEv,
         ConnectedEv,
         HistorySyncEv,
+        QREv,
         event
     )
     from neonize.utils.enum import Presence
@@ -46,7 +48,8 @@ def main():
 
     def interrupted(*_):
         """Signal handler for Ctrl+C."""
-        stop_event.set()
+        logging.info("Received interrupt, terminating.")
+        os._exit(0)  # Forceful, immediate termination
 
     signal.signal(signal.SIGINT, interrupted)
 
@@ -74,6 +77,21 @@ def main():
     @client.event(MessageEv)
     def handle_message(client: NewClient, message: MessageEv):
         on_message(client, message)
+
+    @client.event(QREv)
+    def handle_qr(client: NewClient, qr: QREv):
+        """Handle QR code event."""
+        logging.info("QR Code received. Please scan it with the Neonize app.")
+        if qr.Codes:
+            qr_data_string = qr.Codes[0]
+            try:
+                qr_code = segno.make(qr_data_string)
+                qr_code.terminal(compact=True)
+            except Exception as e:
+                logging.error(f"Failed to generate or print QR code: {e}")
+                logging.error(f"QR Codes data received: {qr.Codes}")
+        else:
+            logging.warning("Received QREv with no QR codes data.")
 
     # Connect the client
     client.connect()
