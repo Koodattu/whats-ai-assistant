@@ -82,7 +82,7 @@ def main():
     def handle_qr(client: NewClient, qr: QREv):
         """Handle QR code event."""
         logging.info("QR Code received.")
-        qr_code = segno.make(qr.qr)
+        #qr_code = segno.make(qr.qr)
 
     # Connect the client
     client.connect()
