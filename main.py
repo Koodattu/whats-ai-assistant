@@ -81,17 +81,8 @@ def main():
     @client.event(QREv)
     def handle_qr(client: NewClient, qr: QREv):
         """Handle QR code event."""
-        logging.info("QR Code received. Please scan it with the Neonize app.")
-        if qr.Codes:
-            qr_data_string = qr.Codes[0]
-            try:
-                qr_code = segno.make(qr_data_string)
-                qr_code.terminal(compact=True)
-            except Exception as e:
-                logging.error(f"Failed to generate or print QR code: {e}")
-                logging.error(f"QR Codes data received: {qr.Codes}")
-        else:
-            logging.warning("Received QREv with no QR codes data.")
+        logging.info("QR Code received.")
+        qr_code = segno.make(qr.qr)
 
     # Connect the client
     client.connect()
