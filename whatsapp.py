@@ -280,6 +280,11 @@ def on_message(client: NewClient, message: MessageEv):
 
         log.info(f"Message from {sender_name} ({sender_id}): {text}")
 
+        # Skip messages from the bot itself
+        if chat.User == sender_id and from_me:
+            log.info(f"Skipping message from bot itself: {sender_id}")
+            return
+
         # Check if the message is older than one minute
         if time.time() - timestamp > 60:
             log.info(f"Message from {sender_name} ({sender_id}) is older than one minute; skipping.")
