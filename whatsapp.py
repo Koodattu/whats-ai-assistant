@@ -12,12 +12,23 @@ from llm import (
 from config import ADMIN_NUMBER, AI_ASSISTANT_NAME
 import pdfplumber
 from docx import Document
-from prompts import GREETING_PROMPT, FINAL_RESPONSE_PROMPT
+from prompts import (
+    PUBLIC_GREETING_PROMPT, PRIVATE_GREETING_PROMPT,
+    PUBLIC_FINAL_RESPONSE_PROMPT, PRIVATE_FINAL_RESPONSE_PROMPT,
+    PRIVATE_WATCHDOG_PROMPT
+)
 
 is_bot_running = True
-custom_prompts = {
-    "greeting": GREETING_PROMPT,
-    "final_response": FINAL_RESPONSE_PROMPT
+# Julkiset promptit (admin voi muokata, resetoi käynnistyksessä)
+public_prompts = {
+    "greeting": PUBLIC_GREETING_PROMPT,
+    "final_response": PUBLIC_FINAL_RESPONSE_PROMPT
+}
+# Yksityiset promptit (ei muokattavissa)
+private_prompts = {
+    "greeting": PRIVATE_GREETING_PROMPT,
+    "final_response": PRIVATE_FINAL_RESPONSE_PROMPT,
+    "watchdog": PRIVATE_WATCHDOG_PROMPT
 }
 bot_name = AI_ASSISTANT_NAME
 
@@ -51,7 +62,11 @@ def convert_docx_to_markdown(docx_path):
 
 def handle_greeting(client: NewClient, chat, sender_id, sender_name, text):
     """Handles first-time greeting for a new conversation."""
-    greeting = generate_first_time_greeting(sender_name, text, custom_prompts["greeting"])
+    greeting = generate_first_time_greeting(
+        sender_name, text,
+        public_prompts["greeting"],
+        private_prompts["greeting"]
+    )
     client.send_message(chat, greeting)
     log.info(f"Sent greeting to {sender_name} ({sender_id}).")
     save_message(sender_id, greeting, int(time.time()), True)
@@ -114,14 +129,14 @@ def handle_commands(client: NewClient, chat, sender_id, text: str) -> bool:
         downloads_folder = "./downloads"
         files = os.listdir(downloads_folder)
         files_list = "\n".join(files)
-        client.send_message(chat, f"[COMMAND] Files in folder:\n{files_list}")
+        client.send_message(chat, f"[KOMENTO] Kansiosta löytyvät tiedostot:\n{files_list}")
         log.info(f"Processed !files command for {sender_id}.")
         return True
     elif text.startswith("!removefile"):
         # Remove a file from the downloads folder
         parts = text.split(" ", 1)
         if len(parts) < 2:
-            client.send_message(chat, "[COMMAND] Please provide a filename to remove.")
+            client.send_message(chat, "[KOMENTO] Anna poistettavan tiedoston nimi.")
             return True
         filename = parts[1]
         dl_path = os.path.join("./downloads", filename)
@@ -132,94 +147,103 @@ def handle_commands(client: NewClient, chat, sender_id, text: str) -> bool:
             os.remove(dl_path)
             if os.path.exists(conv_path):
                 os.remove(conv_path)
-            client.send_message(chat, f"[COMMAND] Removed file: {filename}")
+            client.send_message(chat, f"[KOMENTO] Tiedosto poistettu: {filename}")
         else:
-            client.send_message(chat, f"[COMMAND] File not found: {filename}")
+            client.send_message(chat, f"[KOMENTO] Tiedostoa ei löytynyt: {filename}")
         log.info(f"Processed !removefile command for {sender_id} and file {filename}.")
         return True
     elif text.startswith("!commands"):
-        commands = ["!commands - Show available commands",
-                    "!files - List files in the downloads folder",
-                    "!removefile <filename> - Remove a file from the downloads folder",
-                    "!prompts - Show available prompts",
-                    "!editprompt <prompt_name> <new_prompt_content> - Edit a prompt",
-                    "!renamebot <new_bot_name> - Rename the bot",
-                    "!reset - Clear conversation history for your number",
-                    "!pause - Pause the bot",
-                    "!resume - Resume the bot",
-                    "!permanentstop - Stop the bot permanently"]
+        commands = ["!commands - Näytä käytettävissä olevat komennot",
+                    "!files - Listaa tiedostot downloads-kansiosta",
+                    "!removefile <tiedostonimi> - Poista tiedosto downloads-kansiosta",
+                    "!prompts - Näytä käytettävissä olevat promptit",
+                    "!editprompt <promptin_nimi> <uusi_promptin_sisältö> - Muokkaa promptia",
+                    "!renamebot <uusi_botin_nimi> - Vaihda botin nimi",
+                    "!reset - Tyhjennä keskusteluhistoria numerollesi",
+                    "!pause - Pysäytä botti",
+                    "!resume - Jatka botin toimintaa",
+                    "!permanentstop - Sammuta botti pysyvästi"]
         commands_joined = "\n".join(commands)
-        client.send_message(chat, f"[COMMAND] Available commands:\n{commands_joined}")
+        client.send_message(chat, f"[KOMENTO] Käytettävissä olevat komennot:\n{commands_joined}")
         log.info(f"Processed !commands command for {sender_id}.")
         return True
     elif text.startswith("!prompts"):
-        prompts = [f"greeting: {custom_prompts['greeting']}", f"final_response: {custom_prompts['final_response']}"]
+        prompts = [
+            f"greeting: {public_prompts['greeting']}",
+            f"final_response: {public_prompts['final_response']}"
+        ]
         prompts_joined = "\n".join(prompts)
-        client.send_message(chat, f"[COMMAND] Prompts:\n\n{prompts_joined}")
+        client.send_message(chat, f"[KOMENTO] Julkiset promptit (muokattavissa):\n\n{prompts_joined}")
         log.info(f"Processed !prompts command for {sender_id}.")
         return True
     elif text.startswith("!editprompt"):
         parts = text.split(" ", 2)
         if len(parts) < 3:
-            client.send_message(chat, "[COMMAND] Please provide a prompt name and new prompt content.")
+            client.send_message(chat, "[KOMENTO] Anna muokattava promptin nimi ja uusi sisältö.")
             return True
         prompt_name = parts[1]
         new_prompt_content = parts[2]
-        if prompt_name not in custom_prompts:
-            client.send_message(chat, f"[COMMAND] Unknown prompt: {prompt_name}. Please use !prompts to see available prompts.")
+        if prompt_name not in public_prompts:
+            client.send_message(chat, f"[KOMENTO] Tuntematon promptin nimi: {prompt_name}")
             return True
-        custom_prompts[prompt_name] = new_prompt_content
-        client.send_message(chat, f"[COMMAND] Updated prompt {prompt_name}.")
+        public_prompts[prompt_name] = new_prompt_content
+        client.send_message(chat, f"[KOMENTO] Julkinen prompti {prompt_name} päivitetty.")
         log.info(f"Processed !editprompt command for {sender_id} and prompt {prompt_name}.")
         return True
     elif text.startswith("!renamebot"):
         parts = text.split(" ", 1)
         if len(parts) < 2:
-            client.send_message(chat, "[COMMAND] Please provide a new bot name.")
+            client.send_message(chat, "[KOMENTO] Anna uusi botin nimi.")
             return True
         new_bot_name = parts[1]
         bot_name = new_bot_name
-        client.send_message(chat, f"[COMMAND] Bot name updated to: {new_bot_name}.")
+        client.send_message(chat, f"[KOMENTO] Botin nimi päivitetty: {new_bot_name}.")
         log.info(f"Processed !renamebot command for {sender_id}.")
         return True
     elif text.startswith("!reset"):
-        client.send_message(chat, "[COMMAND] Cleared conversation history!")
+        client.send_message(chat, "[KOMENTO] Keskusteluhistoria tyhjennetty!")
         delete_messages(sender_id)
         log.info(f"Cleared conversation history for {sender_id} due to '!reset' command.")
         return True
     elif text.startswith("!pause"):
-        client.send_message(chat, "[COMMAND] The bot is now paused!")
+        client.send_message(chat, "[KOMENTO] Botti on nyt pysäytetty!")
         is_bot_running = False
         log.info(f"Processed !pause command for {sender_id}.")
         return True
     elif text.startswith("!resume"):
-        client.send_message(chat, "[COMMAND] The bot has now resumed operations!")
+        client.send_message(chat, "[KOMENTO] Botti on nyt jatkanut toimintaansa!")
         is_bot_running = True
         log.info(f"Processed !resume command for {sender_id}.")
         return True
     elif text.startswith("!permanentstop"):
-        client.send_message(chat, "[COMMAND] The bot is shutting down!")
+        client.send_message(chat, "[KOMENTO] Botti sammuu nyt pysyvästi!")
         log.info(f"Processed !permanentstop command for {sender_id}.")
         os._exit(0)
         return True
     elif text.startswith("!"):
-        client.send_message(chat, "[COMMAND] Unknown command. Please use !commands to see available commands.")
+        client.send_message(chat, "[KOMENTO] Tuntematon komento. Käytä !commands nähdäksesi käytettävissä olevat komennot.")
         log.info(f"Processed unknown command for {sender_id}.")
         return True
 
     return False
 
 def handle_final_response(client: NewClient, chat, sender_id, text):
-    """Generates and sends the final response using the LLM."""
+    """Generates and sends the final response using the LLM, with watchdog check."""
+    from llm import call_watchdog_llm
+    is_relevant = call_watchdog_llm(text, private_prompts["watchdog"])
+    if not is_relevant:
+        client.send_message(chat, "Valitettavasti voin auttaa vain vuokra-asuntoihin ja mökkeihin liittyvissä kysymyksissä.")
+        log.info(f"Watchdog prevented response for {sender_id}. Message not relevant.")
+        return
     final_answer = generate_final_response(
         user_id=sender_id,
         user_text=text,
-        custom_prompt=custom_prompts["final_response"]
+        public_prompt=public_prompts["final_response"],
+        private_prompt=private_prompts["final_response"]
     )
     log.debug(f"Final answer generated: {final_answer}")
     if not final_answer.strip():
         log.info(f"No final response generated for {sender_id}.")
-        #client.send_message(chat, "I'm sorry, I couldn't generate a response for you.")
         return
     client.send_message(chat, final_answer)
     save_message(sender_id, final_answer, int(time.time()), True)

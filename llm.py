@@ -1,4 +1,5 @@
 import os
+import json
 from config import (
     LLM_PROVIDER,
     AI_ASSISTANT_NAME,
@@ -7,11 +8,9 @@ from config import (
     AZURE_DEPLOYMENT_NAME,
     AZURE_API_VERSION
 )
-from prompts import (
-    GREETING_PROMPT, FINAL_RESPONSE_PROMPT
-)
 from database import get_recent_messages_formatted
 from openai import AzureOpenAI
+from pydantic import BaseModel
 
 def get_client_and_model():
     """
@@ -41,7 +40,7 @@ def call_llm_api(system_prompt, user_prompt):
         response = client.chat.completions.create(
             model=model,
             messages=messages,
-            max_tokens=100,
+            max_tokens=500,
         )
         # Correctly access the response content
         return response.choices[0].message.content
@@ -49,30 +48,60 @@ def call_llm_api(system_prompt, user_prompt):
         print(f"Error calling LLM API: {e}")
         return ""
 
-def generate_first_time_greeting(user_name, user_message, custom_prompt):
+class WatchdogResponse(BaseModel):
+    relevant: bool
+
+def call_watchdog_llm(user_message, watchdog_prompt):
     """
-    Generate the first-time greeting for the user.
+    Calls the watchdog LLM and returns True if the message is relevant, otherwise False.
+    Uses a Pydantic model and the response_format parameter to ensure JSON format.
     """
-    # Call the LLM API with the prompt containing the placeholder.
-    system_prompt = (custom_prompt + "\n" + GREETING_PROMPT).format(ai_assistant_name=AI_ASSISTANT_NAME)
+    additional_content = ""
+    for file in os.listdir("converted"):
+        with open(os.path.join("converted", file), "r", encoding="utf-8", errors="replace") as f:
+            additional_content += f.read()
+    system_prompt = watchdog_prompt.format(
+        user_message=user_message,
+        additional_content=additional_content or "Ei lisätietoa tiedostoista."
+    )
+    try:
+        client, model = get_client_and_model()
+        response = client.chat.completions.create(
+            model=model,
+            messages=[
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": user_message},
+            ],
+            max_tokens=10,
+            response_format=WatchdogResponse
+        )
+        result = response.choices[0].message.parsed.relevant
+        return bool(result)
+    except Exception as e:
+        print(f"Error calling watchdog LLM: {e}")
+        return False
+
+def generate_first_time_greeting(user_name, user_message, public_prompt, private_prompt):
+    """
+    Luo ensimmäisen tervehdyksen yhdistämällä julkinen ja yksityinen prompti.
+    """
+    system_prompt = (public_prompt + "\n" + private_prompt).format(ai_assistant_name=AI_ASSISTANT_NAME)
     raw_response = call_llm_api(system_prompt, user_message)
-    # Replace the placeholder with the actual user name before sending the message.
     final_response = raw_response.replace("USER_NAME_HERE", user_name)
     return final_response
 
-def generate_final_response(user_id, user_text, custom_prompt):
+def generate_final_response(user_id, user_text, public_prompt, private_prompt):
     """
-    Generate the final response for the user.
+    Luo loppuvastaus yhdistämällä julkinen ja yksityinen prompti.
     """
-    # read all contents from all text files inside converted folder
     conversation_history = get_recent_messages_formatted(user_id)
     additional_content = ""
     for file in os.listdir("converted"):
         with open(os.path.join("converted", file), "r", encoding="utf-8", errors="replace") as f:
             additional_content += f.read()
-    system_prompt = (custom_prompt + "\n" + FINAL_RESPONSE_PROMPT).format(
+    system_prompt = (public_prompt + "\n" + private_prompt).format(
         ai_assistant_name=AI_ASSISTANT_NAME,
         previous_messages=conversation_history,
-        additional_content=additional_content or "No additional content provided.",
+        additional_content=additional_content or "Ei lisätietoa tiedostoista.",
     )
     return call_llm_api(system_prompt, user_text)
