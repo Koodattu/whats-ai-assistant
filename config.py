@@ -20,4 +20,4 @@ MAX_MESSAGES = os.getenv("MAX_MESSAGES", 5)
 
 # AI Assistant Configuration
 AI_ASSISTANT_NAME = os.getenv("ASSISTANT_NAME")
-ADMIN_NUMBER = os.getenv("ADMIN_NUMBER")
+ADMIN_NUMBERS = [num.strip() for num in os.getenv("ADMIN_NUMBERS", "").split(",") if num.strip()]

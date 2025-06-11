@@ -9,7 +9,7 @@ from llm import (
     generate_final_response,
     generate_first_time_greeting
 )
-from config import ADMIN_NUMBER, AI_ASSISTANT_NAME
+from config import ADMIN_NUMBERS, AI_ASSISTANT_NAME
 import pdfplumber
 from docx import Document
 from prompts import (
@@ -73,7 +73,7 @@ def handle_greeting(client: NewClient, chat, sender_id, sender_name, text):
 
 def handle_file(client: NewClient, sender_id, message):
     """Handles file attachments (downloads the file)."""
-    if sender_id != ADMIN_NUMBER:
+    if sender_id not in ADMIN_NUMBERS:
         log.info(f"Files from {sender_id} are not allowed.")
         return False
 
@@ -118,7 +118,7 @@ def handle_commands(client: NewClient, chat, sender_id, text: str) -> bool:
     if not text.startswith("!") or not text.strip():
         return
 
-    if sender_id != ADMIN_NUMBER:
+    if sender_id not in ADMIN_NUMBERS:
         log.info(f"Command {text} from {sender_id} not allowed.")
         return False
 
