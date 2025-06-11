@@ -79,6 +79,7 @@ def handle_file(client: NewClient, sender_id, message):
 
     file_name = (message.Message.documentMessage.fileName or
                  message.Message.imageMessage.fileName or "file")
+    client.send_message(message.Info.MessageSource.Chat, f"[SYSTEM] Lataan nyt tiedoston {file_name}...")
     client.download_any(message=message.Message, path=f"./downloads/{file_name}")
     log.info(f"Downloaded file: {file_name}")
 
@@ -92,7 +93,7 @@ def handle_file(client: NewClient, sender_id, message):
         with open(f"./downloads/{file_name}", "r", encoding="utf-8") as f:
             submission_markdown = f.read()
     else:
-        client.send_message(message.Info.MessageSource.Chat, f"[SYSTEM] Unsupported file type: {file_extension}")
+        client.send_message(message.Info.MessageSource.Chat, f"[SYSTEM] Tiedoston '{file_name}' tiedostotyyppi '{file_extension}' ei ole tuettu.")
         return
 
     base_filename = os.path.splitext(os.path.basename(file_name))[0]
@@ -102,10 +103,10 @@ def handle_file(client: NewClient, sender_id, message):
         with open(txt_filepath, "w", encoding="utf-8") as f:
             f.write(submission_markdown)
         print(f"Converted file saved to: {txt_filepath}")
-        client.send_message(message.Info.MessageSource.Chat, f"[SYSTEM] File is saved and will be injected into context.")
+        client.send_message(message.Info.MessageSource.Chat, f"[SYSTEM] Tiedosto tallennettiin onnistuneesti ja käytetään jatkossa vastausten tuottamisessa.")
     except Exception as e:
         print(f"Error saving redacted submission: {e}")
-        client.send_message(message.Info.MessageSource.Chat, f"[SYSTEM] Error saving file: {e}")
+        client.send_message(message.Info.MessageSource.Chat, f"[SYSTEM] Tapahtui virhe tiedostoa tallentaessa: {e}")
 
     return True
 
@@ -321,11 +322,11 @@ def on_message(client: NewClient, message: MessageEv):
             sender=message.Info.MessageSource.Sender,
             receipt=ReceiptType.READ
         )
-        log.debug(f"Marked message {message.Info.ID} as read.")
+        log.info(f"Marked message {message.Info.ID} as read.")
 
         # Save the incoming message to the DB
         save_message(sender_id, text, timestamp, from_me)
-        log.debug(f"Saved incoming message for user {sender_id} at timestamp {timestamp}.")
+        log.info(f"Saved incoming message for user {sender_id} at timestamp {timestamp}.")
 
         # Check for a command and process it if present.
         if handle_commands(client, chat, sender_id, text):
@@ -343,8 +344,9 @@ def on_message(client: NewClient, message: MessageEv):
 
         # Determine if this is the first message from the user
         previous_messages = get_messages(sender_id)
-        is_first_message = len(previous_messages) == 0
-        log.debug(f"User {sender_id} has {len(previous_messages)} previous messages; is_first_message={is_first_message}")
+        print(previous_messages)
+        is_first_message = len(previous_messages) == 1
+        log.info(f"User {sender_id} has {len(previous_messages)} previous messages; is_first_message={is_first_message}")
 
         # Process greeting for a first-time message
         if is_first_message:
@@ -355,3 +357,4 @@ def on_message(client: NewClient, message: MessageEv):
 
     except Exception as e:
         log.error(f"Error in on_message handler: {e}")
+        log.exception(e)

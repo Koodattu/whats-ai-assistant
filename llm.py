@@ -1,5 +1,4 @@
 import os
-import json
 from config import (
     LLM_PROVIDER,
     AI_ASSISTANT_NAME,
@@ -11,6 +10,7 @@ from config import (
 from database import get_recent_messages_formatted
 from openai import AzureOpenAI
 from pydantic import BaseModel
+from neonize.utils import log
 
 def get_client_and_model():
     """
@@ -56,6 +56,7 @@ def call_watchdog_llm(user_message, watchdog_prompt):
     Calls the watchdog LLM and returns True if the message is relevant, otherwise False.
     Uses a Pydantic model and the response_format parameter to ensure JSON format.
     """
+    print("Calling watchdog LLM with user message:", user_message)
     additional_content = ""
     for file in os.listdir("converted"):
         with open(os.path.join("converted", file), "r", encoding="utf-8", errors="replace") as f:
@@ -66,7 +67,7 @@ def call_watchdog_llm(user_message, watchdog_prompt):
     )
     try:
         client, model = get_client_and_model()
-        response = client.chat.completions.create(
+        response = client.beta.chat.completions.parse(
             model=model,
             messages=[
                 {"role": "system", "content": system_prompt},
@@ -79,12 +80,14 @@ def call_watchdog_llm(user_message, watchdog_prompt):
         return bool(result)
     except Exception as e:
         print(f"Error calling watchdog LLM: {e}")
+        log.exception(e)
         return False
 
 def generate_first_time_greeting(user_name, user_message, public_prompt, private_prompt):
     """
     Luo ensimmäisen tervehdyksen yhdistämällä julkinen ja yksityinen prompti.
     """
+    log.info(f"Generating first time greeting for user: {user_name}")
     system_prompt = (public_prompt + "\n" + private_prompt).format(ai_assistant_name=AI_ASSISTANT_NAME)
     raw_response = call_llm_api(system_prompt, user_message)
     final_response = raw_response.replace("USER_NAME_HERE", user_name)
