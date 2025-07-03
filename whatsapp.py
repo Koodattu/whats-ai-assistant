@@ -2,7 +2,7 @@ import time
 from collections import defaultdict, deque
 from neonize.client import NewClient
 from neonize.events import MessageEv, HistorySyncEv
-from neonize.utils.enum import ReceiptType, ChatPresence
+from neonize.utils.enum import ReceiptType, ChatPresence, ChatPresenceMedia
 from neonize.utils import log
 from database import save_message, get_messages, delete_messages
 import os
@@ -71,7 +71,7 @@ def handle_greeting(client: NewClient, chat, sender_id, sender_name, text):
     # Add a delay before responding
     time.sleep(5)
     client.send_message(chat, greeting)
-    client.send_chat_presence(jid=chat, state=ChatPresence.CHAT_PRESENCE_PAUSED)
+    client.send_chat_presence(jid=chat, state=ChatPresence.CHAT_PRESENCE_PAUSED, media=ChatPresenceMedia.CHAT_PRESENCE_MEDIA_TEXT)
     log.info(f"Sent greeting to {sender_name} ({sender_id}).")
     save_message(sender_id, greeting, int(time.time()), True)
 
@@ -255,7 +255,7 @@ def handle_final_response(client: NewClient, chat, sender_id, text):
     # Add a delay before responding
     time.sleep(5)
     client.send_message(chat, final_answer)
-    client.send_chat_presence(jid=chat, state=ChatPresence.CHAT_PRESENCE_PAUSED)
+    client.send_chat_presence(jid=chat, state=ChatPresence.CHAT_PRESENCE_PAUSED, media=ChatPresenceMedia.CHAT_PRESENCE_MEDIA_TEXT)
     save_message(sender_id, final_answer, int(time.time()), True)
     log.info(f"Sent final response to {sender_id}.")
 
@@ -351,12 +351,12 @@ def on_message(client: NewClient, message: MessageEv):
         save_message(sender_id, text, timestamp, from_me)
         log.info(f"Saved incoming message for user {sender_id} at timestamp {timestamp}.")
 
-        client.send_chat_presence(jid=chat, state=ChatPresence.CHAT_PRESENCE_COMPOSING)
+        client.send_chat_presence(jid=chat, state=ChatPresence.CHAT_PRESENCE_COMPOSING, media=ChatPresenceMedia.CHAT_PRESENCE_MEDIA_TEXT)
 
         # Check for a command and process it if present.
         if handle_commands(client, chat, sender_id, text):
             # If a command was processed, do not process further.
-            client.send_chat_presence(jid=chat, state=ChatPresence.CHAT_PRESENCE_PAUSED)
+            client.send_chat_presence(jid=chat, state=ChatPresence.CHAT_PRESENCE_PAUSED, media=ChatPresenceMedia.CHAT_PRESENCE_MEDIA_TEXT)
             return
 
         # Process file attachments if present
