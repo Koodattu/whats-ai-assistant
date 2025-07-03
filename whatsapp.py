@@ -1,7 +1,8 @@
 import time
+from collections import defaultdict, deque
 from neonize.client import NewClient
 from neonize.events import MessageEv, HistorySyncEv
-from neonize.utils.enum import ReceiptType
+from neonize.utils.enum import ReceiptType, ChatPresence
 from neonize.utils import log
 from database import save_message, get_messages, delete_messages
 import os
@@ -67,7 +68,10 @@ def handle_greeting(client: NewClient, chat, sender_id, sender_name, text):
         public_prompts["greeting"],
         private_prompts["greeting"]
     )
+    # Add a delay before responding
+    time.sleep(5)
     client.send_message(chat, greeting)
+    client.send_chat_presence(chat=chat, presence=ChatPresence.CHAT_PRESENCE_PAUSED)
     log.info(f"Sent greeting to {sender_name} ({sender_id}).")
     save_message(sender_id, greeting, int(time.time()), True)
 
@@ -125,6 +129,8 @@ def handle_commands(client: NewClient, chat, sender_id, text: str) -> bool:
     log.info(f"Command {text} from {sender_id} is allowed.")
     global is_bot_running, custom_prompts, bot_name
 
+    # Add a delay before responding
+    time.sleep(3)
     if text.startswith("!files"):
         # Get list of files in the downloads folder
         downloads_folder = "./downloads"
@@ -246,7 +252,10 @@ def handle_final_response(client: NewClient, chat, sender_id, text):
     if not final_answer.strip():
         log.info(f"No final response generated for {sender_id}.")
         return
+    # Add a delay before responding
+    time.sleep(5)
     client.send_message(chat, final_answer)
+    client.send_chat_presence(chat=chat, presence=ChatPresence.CHAT_PRESENCE_PAUSED)
     save_message(sender_id, final_answer, int(time.time()), True)
     log.info(f"Sent final response to {sender_id}.")
 
@@ -284,6 +293,20 @@ def on_history_sync(client: NewClient, history: HistorySyncEv):
             timestamp = message_obj.message.messageTimestamp
             log.debug(f"Saving message with timestamp {timestamp} for user {user_id}")
             save_message(user_id, message_content, timestamp, from_me)
+
+# Rate limiting: user_id -> deque of timestamps (seconds)
+user_message_timestamps = defaultdict(lambda: deque(maxlen=5))
+
+def can_respond_to_user(user_id):
+    now = time.time()
+    timestamps = user_message_timestamps[user_id]
+    # Remove timestamps older than 30 seconds
+    while timestamps and now - timestamps[0] > 30:
+        timestamps.popleft()
+    return len(timestamps) < 5
+
+def record_user_response(user_id):
+    user_message_timestamps[user_id].append(time.time())
 
 def on_message(client: NewClient, message: MessageEv):
     """
@@ -328,9 +351,12 @@ def on_message(client: NewClient, message: MessageEv):
         save_message(sender_id, text, timestamp, from_me)
         log.info(f"Saved incoming message for user {sender_id} at timestamp {timestamp}.")
 
+        client.send_chat_presence(chat=chat, presence=ChatPresence.CHAT_PRESENCE_COMPOSING)
+
         # Check for a command and process it if present.
         if handle_commands(client, chat, sender_id, text):
             # If a command was processed, do not process further.
+            client.send_chat_presence(chat=chat, presence=ChatPresence.CHAT_PRESENCE_PAUSED)
             return
 
         # Process file attachments if present
@@ -342,6 +368,11 @@ def on_message(client: NewClient, message: MessageEv):
             log.info("Bot is paused; skipping message processing.")
             return
 
+        # Rate limiting: only respond if under the limit
+        if not can_respond_to_user(sender_id):
+            log.info(f"Rate limit reached for {sender_id}; skipping response.")
+            return
+
         # Determine if this is the first message from the user
         previous_messages = get_messages(sender_id)
         print(previous_messages)
@@ -351,9 +382,12 @@ def on_message(client: NewClient, message: MessageEv):
         # Process greeting for a first-time message
         if is_first_message:
             handle_greeting(client, chat, sender_id, sender_name, text)
+            record_user_response(sender_id)
+            return
 
         log.info(f"Generating final response for {sender_id}...")
         handle_final_response(client, chat, sender_id, text)
+        record_user_response(sender_id)
 
     except Exception as e:
         log.error(f"Error in on_message handler: {e}")
