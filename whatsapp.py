@@ -239,6 +239,8 @@ def handle_final_response(client: NewClient, chat, sender_id, text):
     from llm import call_watchdog_llm
     is_relevant = call_watchdog_llm(text, private_prompts["watchdog"])
     if not is_relevant:
+        # Add a delay before responding
+        time.sleep(5)
         client.send_message(chat, "Valitettavasti voin auttaa vain vuokra-asuntoihin ja mökkeihin liittyvissä kysymyksissä.")
         log.info(f"Watchdog prevented response for {sender_id}. Message not relevant.")
         return
