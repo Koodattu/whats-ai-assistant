@@ -2,10 +2,12 @@
 import re
 import time
 from collections import defaultdict, deque
-from neonize.client import NewClient
+from neonize.client import NewClient, JID
 from neonize.events import MessageEv, HistorySyncEv
 from neonize.utils.enum import ReceiptType, ChatPresence, ChatPresenceMedia
 from neonize.utils import log
+import pdfplumber
+from docx import Document
 from database import save_message, get_messages, delete_messages, get_recent_messages_formatted
 from scraping import scrape_text
 import os
@@ -14,7 +16,9 @@ from llm import (
     generate_final_response,
     generate_first_time_greeting
 )
-from config import ADMIN_NUMBER
+
+# Ensure converted directory exists
+os.makedirs("converted", exist_ok=True)
 
 USER_SCRAPED_CONTENT = {}
 
@@ -32,14 +36,14 @@ def can_respond_to_user(user_id):
 def record_user_response(user_id):
     user_message_timestamps[user_id].append(time.time())
 
-def handle_greeting(client: NewClient, chat, sender_id, sender_name, text):
+def handle_greeting(client: NewClient, chat: JID, sender_id, sender_name, text):
     """Handles first-time greeting for a new conversation."""
     greeting = generate_first_time_greeting(sender_name, text)
     client.send_message(chat, greeting)
     log.info(f"Sent greeting to {sender_name} ({sender_id}).")
     save_message(sender_id, greeting, int(time.time()), True)
 
-def handle_link(client, message, sender_id, sender_name, text):
+def handle_link(client: NewClient, message: MessageEv, sender_id, sender_name, text):
     """Handles link detection and scraping."""
     url_pattern = r'(https?://\S+)'
     links_found = re.findall(url_pattern, text)
@@ -61,52 +65,90 @@ def handle_link(client, message, sender_id, sender_name, text):
     USER_SCRAPED_CONTENT[sender_id] = f"\n[Scraped from {link}]\n{scraped_content}"
     log.info(f"Updated scraped content for {sender_id}.")
 
-def handle_file(client, message):
-    """Handles file attachments (downloads the file)."""
-    file_name = (message.Message.documentMessage.fileName or
-                 message.Message.imageMessage.fileName or "file")
-    client.download_any(message=message.Message, path=f"./downloads/{file_name}")
-    log.info(f"Downloaded file: {file_name}")
+
+def convert_pdf_to_markdown(pdf_path):
+    """Converts a PDF file to markdown text."""
+    try:
+        with pdfplumber.open(pdf_path) as pdf:
+            markdown_lines = []
+            for page_num, page in enumerate(pdf.pages, start=1):
+                markdown_lines.append(f"## Page {page_num}\n")
+                text = page.extract_text()
+                if text:
+                    markdown_lines.append(text.strip() + "\n")
+                else:
+                    markdown_lines.append("*(No text could be extracted from this page)*\n")
+            return "\n".join(markdown_lines)
+    except Exception as e:
+        return f"Error reading PDF: {e}"
+
+def convert_docx_to_markdown(docx_path):
+    """Converts a DOCX file to markdown text."""
+    try:
+        document = Document(docx_path)
+        markdown_text = ""
+        for paragraph in document.paragraphs:
+            markdown_text += paragraph.text + "\n"
+        return markdown_text
+    except Exception as e:
+        return f"Error reading DOCX: {e}"
+
+def handle_file(client: NewClient, message: MessageEv):
+    """Handles file attachments (downloads the file, converts, and saves as text)."""
+    file_name = (getattr(message.Message.documentMessage, 'fileName', None) or
+                 getattr(message.Message.imageMessage, 'fileName', None) or "file")
+    chat = message.Info.MessageSource.Chat
+    client.send_message(chat, f"[SYSTEM] Processing file: {file_name}...")
+    try:
+        client.download_any(message=message.Message, path=f"./downloads/{file_name}")
+        log.info(f"Downloaded file: {file_name}")
+    except Exception as e:
+        log.error(f"Failed to download file: {e}")
+        client.send_message(chat, f"[SYSTEM] Failed to download file: {e}")
+        return
+
+    file_extension = os.path.splitext(file_name)[1].lower()
+    submission_markdown = None
+    if file_extension == ".pdf":
+        submission_markdown = convert_pdf_to_markdown(f"./downloads/{file_name}")
+    elif file_extension == ".docx":
+        submission_markdown = convert_docx_to_markdown(f"./downloads/{file_name}")
+    elif file_extension == ".txt":
+        try:
+            with open(f"./downloads/{file_name}", "r", encoding="utf-8") as f:
+                submission_markdown = f.read()
+        except Exception as e:
+            submission_markdown = f"Error reading TXT: {e}"
+    else:
+        client.send_message(chat, f"[SYSTEM] File type '{file_extension}' is not supported.")
+        return
+
+    base_filename = os.path.splitext(os.path.basename(file_name))[0]
+    txt_filename = f"{base_filename}.txt"
+    txt_filepath = os.path.join("converted", txt_filename)
+    try:
+        with open(txt_filepath, "w", encoding="utf-8") as f:
+            f.write(submission_markdown)
+        log.info(f"Converted file saved to: {txt_filepath}")
+        client.send_message(chat, f"[SYSTEM] File processed and saved for future use.")
+    except Exception as e:
+        log.error(f"Error saving converted file: {e}")
+        client.send_message(chat, f"[SYSTEM] Error saving converted file: {e}")
+    return
 
 def handle_commands(client, chat, sender_id, text):
     """
     Checks for special commands. If one of the commands is detected and the sender's number
     matches a specific number, it sends back pre-formatted info and returns True.
     """
-    # Example: Only allow commands from a specific sender.
-    if sender_id != ADMIN_NUMBER:
-        log.debug(f"Command {text} from {sender_id} not allowed.")
-        return False
-
     log.debug(f"Command {text} from {sender_id} is allowed.")
 
-    if text.startswith("!files"):
-        # Get list of files in the downloads folder
-        downloads_folder = "./downloads"
-        files = os.listdir(downloads_folder)
-        files_list = "\n".join(files)
-        client.send_message(chat, f"[COMMAND] File info: \n{files_list}")
-        log.info(f"Processed !files command for {sender_id}.")
-        return True
-    elif text.startswith("!commands"):
-        client.send_message(chat, "[COMMAND] Available commands: !files, !commands, !prompts")
-        log.info(f"Processed !commands command for {sender_id}.")
-        return True
-    elif text.startswith("!prompts"):
-        client.send_message(chat, "[COMMAND] Prompt info: [list of prompt templates...]")
-        log.info(f"Processed !prompts command for {sender_id}.")
-        return True
-    # Check if the user wants to clear the conversation history
-    elif text.startswith("!reset"):
+    if text.startswith("!reset"):
         client.send_message(chat, "[SYSTEM] Cleared conversation history!")
         delete_messages(sender_id)
         log.info(f"Cleared conversation history for {sender_id} due to '!reset' command.")
         USER_SCRAPED_CONTENT[sender_id] = ""
         log.debug(f"Cleared scraped content for {sender_id}.")
-        return True
-    elif text.startswith("!"):
-        client.send_message(chat, "[COMMAND] Unknown command.")
-        log.info(f"Processed unknown command for {sender_id}.")
         return True
 
     return False
