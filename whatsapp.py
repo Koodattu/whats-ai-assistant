@@ -1,6 +1,7 @@
 # whatsapp.py
 import re
 import time
+from collections import defaultdict, deque
 from neonize.client import NewClient
 from neonize.events import MessageEv, HistorySyncEv
 from neonize.utils.enum import ReceiptType, ChatPresence, ChatPresenceMedia
@@ -16,6 +17,20 @@ from llm import (
 from config import ADMIN_NUMBER
 
 USER_SCRAPED_CONTENT = {}
+
+# Rate limiting: user_id -> deque of timestamps (seconds)
+user_message_timestamps = defaultdict(lambda: deque(maxlen=5))
+
+def can_respond_to_user(user_id):
+    now = time.time()
+    timestamps = user_message_timestamps[user_id]
+    # Remove timestamps older than 30 seconds
+    while timestamps and now - timestamps[0] > 30:
+        timestamps.popleft()
+    return len(timestamps) < 5
+
+def record_user_response(user_id):
+    user_message_timestamps[user_id].append(time.time())
 
 def handle_greeting(client: NewClient, chat, sender_id, sender_name, text):
     """Handles first-time greeting for a new conversation."""
@@ -187,6 +202,12 @@ def on_message(client: NewClient, message: MessageEv):
         log.debug(f"Marked message {message.Info.ID} as read.")
 
 
+
+        # Rate limiting: only respond if under the limit
+        if not can_respond_to_user(sender_id):
+            log.info(f"Rate limit reached for {sender_id}; skipping response.")
+            return
+
         # Send typing notification (composing)
         client.send_chat_presence(jid=chat, state=ChatPresence.CHAT_PRESENCE_COMPOSING, media=ChatPresenceMedia.CHAT_PRESENCE_MEDIA_TEXT)
 
@@ -221,8 +242,10 @@ def on_message(client: NewClient, message: MessageEv):
         log.debug(f"Retrieved conversation history for {sender_id}: {conversation_history}")
 
 
+
         log.info(f"Generating final response for {sender_id}...")
         handle_final_response(client, chat, sender_id, text, conversation_history)
+        record_user_response(sender_id)
 
         # After responding, send paused notification
         client.send_chat_presence(jid=chat, state=ChatPresence.CHAT_PRESENCE_PAUSED, media=ChatPresenceMedia.CHAT_PRESENCE_MEDIA_TEXT)
