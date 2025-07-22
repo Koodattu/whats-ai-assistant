@@ -3,7 +3,7 @@ import re
 import time
 from neonize.client import NewClient
 from neonize.events import MessageEv, HistorySyncEv
-from neonize.utils.enum import ReceiptType
+from neonize.utils.enum import ReceiptType, ChatPresence, ChatPresenceMedia
 from neonize.utils import log
 from database import save_message, get_messages, delete_messages, get_recent_messages_formatted
 from scraping import scrape_text
@@ -186,9 +186,14 @@ def on_message(client: NewClient, message: MessageEv):
         )
         log.debug(f"Marked message {message.Info.ID} as read.")
 
+
+        # Send typing notification (composing)
+        client.send_chat_presence(jid=chat, state=ChatPresence.CHAT_PRESENCE_COMPOSING, media=ChatPresenceMedia.CHAT_PRESENCE_MEDIA_TEXT)
+
         # Check for a command and process it if present.
         if handle_commands(client, chat, sender_id, text):
-            # If a command was processed, do not process further.
+            # If a command was processed, send paused notification and do not process further.
+            client.send_chat_presence(jid=chat, state=ChatPresence.CHAT_PRESENCE_PAUSED, media=ChatPresenceMedia.CHAT_PRESENCE_MEDIA_TEXT)
             return
 
         # Determine if this is the first message from the user
@@ -215,8 +220,12 @@ def on_message(client: NewClient, message: MessageEv):
         conversation_history = get_recent_messages_formatted(sender_id)
         log.debug(f"Retrieved conversation history for {sender_id}: {conversation_history}")
 
+
         log.info(f"Generating final response for {sender_id}...")
         handle_final_response(client, chat, sender_id, text, conversation_history)
+
+        # After responding, send paused notification
+        client.send_chat_presence(jid=chat, state=ChatPresence.CHAT_PRESENCE_PAUSED, media=ChatPresenceMedia.CHAT_PRESENCE_MEDIA_TEXT)
 
     except Exception as e:
         log.error(f"Error in on_message handler: {e}")
