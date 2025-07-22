@@ -1,4 +1,3 @@
-# whatsapp.py
 import re
 import time
 import random
@@ -18,6 +17,7 @@ from llm import (
     generate_wait_message,
     generate_final_response
 )
+from config import SKIP_HISTORY_SYNC
 
 # Global message queue for processing incoming messages sequentially
 message_queue = queue.Queue()
@@ -237,11 +237,15 @@ def handle_final_response(client: NewClient, chat: JID, sender_id: str, text: st
 
 # --- Main event handlers ---
 
-def on_history_sync(client, history: HistorySyncEv):
+def on_history_sync(client: NewClient, history: HistorySyncEv):
     """
     Processes historical messages from the sync data, storing them in the DB.
     The data structure is at `history.Data.conversations[...]`.
     """
+    if SKIP_HISTORY_SYNC:
+        log.info("Skipping history sync due to configuration.")
+        return
+
     sync_type = getattr(history.Data, "syncType", None)
     log.info(f"Received history sync event with syncType: {sync_type}")
     log.debug(f"Full history sync data: {history}")

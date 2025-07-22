@@ -63,7 +63,7 @@ def main():
         on_history_sync(client, history)
 
     @client.event(PairStatusEv)
-    def pair_status(_: NewClient, message: PairStatusEv):
+    def pair_status(client: NewClient, message: PairStatusEv):
         logging.info(f"logged as {message.ID.User}")
 
     @client.event(MessageEv)

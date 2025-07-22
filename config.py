@@ -12,6 +12,7 @@ OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 CONV_DB_PATH = "db/conversations.sqlite3"
 NEO_DB_PATH = "db/neonize.sqlite3"
 MAX_MESSAGES = 10
+SKIP_HISTORY_SYNC = True
 
 FINAL_RESPONSE_PROMPT = """\
 You are a friendly assistant called {ai_assistant_name}, an expert at helping users without wasting their time.
