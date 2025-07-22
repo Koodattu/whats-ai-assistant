@@ -1,4 +1,5 @@
 import logging
+import random
 from config import (
     OPENAI_API_KEY,
     OPENAI_MODEL_NAME,
@@ -10,17 +11,23 @@ import base64
 import mimetypes
 import os
 import openai
+from openai.types.chat import ChatCompletion
 from enum import Enum
 from pydantic import BaseModel
+from PIL import Image
+import io
 
 client = openai.OpenAI(api_key=OPENAI_API_KEY)
 
-def _call_openai_api(prompt_text):
+def _call_openai_api(system_prompt, user_message):
     try:
-        completion = client.chat.completions.create(
+        messages = [
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": user_message}
+        ]
+        completion: ChatCompletion = client.chat.completions.create(
             model=OPENAI_MODEL_NAME,
-            messages=[{"role": "system", "content": prompt_text}],
-            stream=False,
+            messages=messages,
         )
         return completion.choices[0].message.content.strip()
     except Exception as e:
@@ -35,23 +42,15 @@ def generate_final_response(user_id, scraped_text, user_text):
     final_prompt = FINAL_RESPONSE_PROMPT.format(
         ai_assistant_name=AI_ASSISTANT_NAME,
         previous_messages=get_recent_messages_formatted(user_id),
-        scraped_text=scraped_text or "No additional content provided.",
-        user_message=user_text
+        scraped_text=scraped_text or "No additional content provided."
     )
 
     logging.debug(f"Final prompt generated: {final_prompt}")
-    return _call_openai_api(final_prompt).strip()
+    return _call_openai_api(final_prompt, user_text).strip()
 
 def generate_wait_message(user_text):
-    prompt = f"""\
-The user has just sent the following message: \"{user_text}\"
-Please produce exactly one short sentence that says something along the lines of:
-\"Please wait, just one moment\"
-but in the same language the user wrote in.
-Keep it very short.
-"""
-    result = _call_openai_api(prompt)
-    return result.strip()
+    prompt = """Please produce exactly one short sentence that says something along the lines of: \"Please wait, just one moment\" but in the same language the user wrote in. Keep it very short."""
+    return _call_openai_api(prompt, user_text).strip()
 
 class GenerateImageTool(BaseModel):
     prompt: str
@@ -85,18 +84,18 @@ available_tools = [
     ),
 ]
 
-def poll_llm_for_tool_choice(user_message, system_prompt=None, model="gpt-4o"):
+def poll_llm_for_tool_choice(user_message):
     """
     Poll the LLM to decide which tool to call for a user request.
     Returns the tool call(s) and arguments if any.
     """
     messages = []
-    if system_prompt:
-        messages.append({"role": "system", "content": system_prompt})
+    system_prompt = ""
+    messages.append({"role": "system", "content": system_prompt})
     messages.append({"role": "user", "content": user_message})
     try:
-        completion = client.chat.completions.parse(
-            model=model,
+        completion = client.beta.chat.completions.parse(
+            model=OPENAI_MODEL_NAME,
             messages=messages,
             tools=available_tools,
         )
@@ -123,7 +122,7 @@ def text_to_speech_with_openai(text, model="gpt-4o-mini-tts", voice="alloy", res
         logging.error(f"OpenAI TTS API Request Failed: {e}")
         return None
 
-def generate_image_with_openai(prompt, model="dall-e-3", size="1024x1024", response_format="b64_json"):
+def generate_image_with_openai(prompt):
     """
     Generate an image from a prompt using OpenAI's image API (DALL-E).
     Returns base64 string if response_format is 'b64_json'.
@@ -131,23 +130,23 @@ def generate_image_with_openai(prompt, model="dall-e-3", size="1024x1024", respo
     try:
         response = client.images.generate(
             prompt=prompt,
-            model=model,
-            size=size,
-            response_format=response_format,
-            quality="standard",
-            n=1,
+            model="gpt-image-1",
+            response_format="b64_json",
+            quality="medium",
+            n=1
         )
-        # Return base64 string or URL depending on response_format
-        if response_format == "b64_json":
-            return response.data[0].b64_json
-        else:
-            return response.data[0].url
+        image_data = base64.b64decode(response.data[0].b64_json)
+        image = Image.open(io.BytesIO(image_data))
+        filename = f"gptimage1_generated_{random.randint(1, 9999999)}.png"
+        filepath = os.path.join("images", filename)
+        image.save(filepath)
+        return filepath
     except Exception as e:
         logging.error(f"OpenAI Image Generation Failed: {e}")
         return None
 
 
-def edit_image_with_openai(image_path, prompt, model="dall-e-3", size="1024x1024", response_format="b64_json"):
+def edit_image_with_openai(image_path, prompt):
     """
     Edit an image using OpenAI's image API (DALL-E).
     Requires an input image file path and a prompt.
@@ -158,15 +157,17 @@ def edit_image_with_openai(image_path, prompt, model="dall-e-3", size="1024x1024
             response = client.images.edit(
                 image=image_file,
                 prompt=prompt,
-                model=model,
-                size=size,
-                response_format=response_format,
-                n=1,
+                model="gpt-image-1",
+                response_format="b64_json",
+                quality="medium",
+                n=1
             )
-        if response_format == "b64_json":
-            return response.data[0].b64_json
-        else:
-            return response.data[0].url
+        image_data = base64.b64decode(response.data[0].b64_json)
+        image = Image.open(io.BytesIO(image_data))
+        filename = f"gptimage1_edited_{random.randint(1, 9999999)}.png"
+        filepath = os.path.join("images", filename)
+        image.save(filepath)
+        return filepath
     except Exception as e:
         logging.error(f"OpenAI Image Editing Failed: {e}")
         return None
@@ -205,8 +206,6 @@ def describe_image_with_gpt(image_path_or_url, prompt_text="Describe the image."
     except Exception as e:
         logging.error(f"OpenAI Vision API Request Failed: {e}")
         return "Error with OpenAI Vision API request."
-
-
 
 def transcribe_audio_with_whisper(audio_file_path, prompt=None):
     """
