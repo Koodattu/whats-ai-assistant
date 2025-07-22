@@ -146,9 +146,15 @@ def handle_commands(client: NewClient, chat: JID, sender_id: str, text: str):
 
 def handle_final_response(client: NewClient, chat: JID, sender_id: str, text: str):
     """Generates and sends the final response using the LLM."""
+    # Start timer for total response delay
+    min_total_delay = random.uniform(2, 5)
+    start_time = time.time()
     final_answer = generate_final_response(user_id=sender_id, scraped_text=USER_SCRAPED_CONTENT.get(sender_id, ""), user_text=text)
     log.debug(f"Final answer generated: {final_answer}")
-    time.sleep(random.uniform(2, 5))  # Add random delay before sending final response
+    elapsed = time.time() - start_time
+    remaining = min_total_delay - elapsed
+    if remaining > 0:
+        time.sleep(remaining)
     client.send_message(to=chat, message=final_answer)
     save_message(user_id=sender_id, message=final_answer, timestamp=int(time.time()), from_me=True)
     log.info(f"Sent final response to {sender_id}.")
