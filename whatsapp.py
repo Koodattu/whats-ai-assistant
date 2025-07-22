@@ -15,13 +15,9 @@ from llm import (
 )
 from config import ADMIN_NUMBER
 
-# A simple in-memory dictionary to store scraped link content per user
-#   { user_id: "accumulated scraped text" }
 USER_SCRAPED_CONTENT = {}
 
-# --- Helper functions ---
-
-def handle_greeting(client, chat, sender_id, sender_name, text):
+def handle_greeting(client: NewClient, chat, sender_id, sender_name, text):
     """Handles first-time greeting for a new conversation."""
     greeting = generate_first_time_greeting(sender_name, text)
     client.send_message(chat, greeting)
@@ -66,7 +62,7 @@ def handle_commands(client, chat, sender_id, text):
     if sender_id != ADMIN_NUMBER:
         log.debug(f"Command {text} from {sender_id} not allowed.")
         return False
-    
+
     log.debug(f"Command {text} from {sender_id} is allowed.")
 
     if text.startswith("!files"):
@@ -97,7 +93,7 @@ def handle_commands(client, chat, sender_id, text):
         client.send_message(chat, "[COMMAND] Unknown command.")
         log.info(f"Processed unknown command for {sender_id}.")
         return True
-    
+
     return False
 
 def handle_final_response(client, chat, sender_id, text, conversation_history):
@@ -194,7 +190,7 @@ def on_message(client: NewClient, message: MessageEv):
         if handle_commands(client, chat, sender_id, text):
             # If a command was processed, do not process further.
             return
-        
+
         # Determine if this is the first message from the user
         previous_messages = get_messages(sender_id)
         is_first_message = len(previous_messages) == 0
