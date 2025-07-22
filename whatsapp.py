@@ -202,7 +202,7 @@ def on_message(client: NewClient, message: MessageEv):
                 message.Message.documentMessage.caption or
                 "")
         from_me = message.Info.MessageSource.IsFromMe
-        timestamp = message.Info.Timestamp // 1000  # Convert ms to s if needed
+        timestamp = message.Info.Timestamp // 1000
         sender_name = message.Info.Pushname or "User"
 
         log.info(f"Message from {sender_name} ({sender_id}): {text}")
@@ -227,8 +227,6 @@ def on_message(client: NewClient, message: MessageEv):
             receipt=ReceiptType.READ
         )
         log.debug(f"Marked message {message.Info.ID} as read.")
-
-
 
         # Rate limiting: only respond if under the limit
         if not can_respond_to_user(sender_id):
