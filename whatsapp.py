@@ -9,13 +9,89 @@ from neonize.utils.enum import ReceiptType, ChatPresence, ChatPresenceMedia
 from neonize.utils import log
 import pdfplumber
 from docx import Document
-from database import save_message, get_messages, delete_messages, get_recent_messages_formatted
+import threading
+import queue
+from database import save_message, delete_messages
 from scraping import scrape_text
 import os
 from llm import (
     generate_wait_message,
     generate_final_response
 )
+
+# Global message queue for processing incoming messages sequentially
+message_queue = queue.Queue()
+
+def process_message(client: NewClient, message: MessageEv):
+    try:
+        chat = message.Info.MessageSource.Chat
+        sender_id = message.Info.MessageSource.Chat.User
+        text = (message.Message.conversation or
+                message.Message.extendedTextMessage.text or
+                message.Message.imageMessage.caption or
+                message.Message.documentMessage.caption or
+                "")
+        from_me = message.Info.MessageSource.IsFromMe
+        timestamp = message.Info.Timestamp // 1000
+        sender_name = message.Info.Pushname or "User"
+
+        log.info(f"Message from {sender_name} ({sender_id}): {text}")
+        log.debug(f"Raw message info: {message}")
+
+        # Save raw message object to a file
+        message_filename = f"messages/{int(time.time())}.txt"
+        with open(message_filename, "w", encoding="utf-8") as file:
+            file.write(str(message))
+        log.debug(f"Saved raw message to {message_filename}")
+
+        # Check if the message is older than one minute
+        if time.time() - timestamp > 60:
+            log.info(f"Message from {sender_name} ({sender_id}) is older than one minute; skipping further processing.")
+            return
+
+        # Mark as read
+        client.mark_read(
+            message.Info.ID,
+            chat=chat,
+            sender=message.Info.MessageSource.Sender,
+            receipt=ReceiptType.READ
+        )
+        log.debug(f"Marked message {message.Info.ID} as read.")
+
+        # Rate limiting: only respond if under the limit
+        if not can_respond_to_user(sender_id):
+            log.info(f"Rate limit reached for {sender_id}; skipping response.")
+            return
+
+        # Send typing notification (composing)
+        client.send_chat_presence(jid=chat, state=ChatPresence.CHAT_PRESENCE_COMPOSING, media=ChatPresenceMedia.CHAT_PRESENCE_MEDIA_TEXT)
+
+        # Check for a command and process it if present.
+        if handle_commands(client, chat, sender_id, text):
+            # If a command was processed, send paused notification and do not process further.
+            client.send_chat_presence(jid=chat, state=ChatPresence.CHAT_PRESENCE_PAUSED, media=ChatPresenceMedia.CHAT_PRESENCE_MEDIA_TEXT)
+            return
+
+        # Save the incoming message to the DB
+        save_message(sender_id, text, timestamp, from_me)
+        log.debug(f"Saved incoming message for user {sender_id} at timestamp {timestamp}.")
+
+        # Process links (if any)
+        handle_link(client, message, sender_id, sender_name, text)
+
+        # Process file attachments if present
+        if message.Info.Type == "media" and not message.Info.MediaType == "url":
+            handle_file(client, message)
+
+        log.info(f"Generating final response for {sender_id}...")
+        handle_final_response(client, chat, sender_id, text)
+        record_user_response(sender_id)
+
+        # After responding, send paused notification
+        client.send_chat_presence(jid=chat, state=ChatPresence.CHAT_PRESENCE_PAUSED, media=ChatPresenceMedia.CHAT_PRESENCE_MEDIA_TEXT)
+
+    except Exception as e:
+        log.error(f"Error in process_message handler: {e}")
 
 USER_SCRAPED_CONTENT = {}
 
@@ -198,76 +274,19 @@ def on_history_sync(client, history: HistorySyncEv):
 
 def on_message(client: NewClient, message: MessageEv):
     """
-    Real-time incoming messages.
-    Uses one big try/except to capture any errors and separates out key functionality
-    into helper functions.
+    Enqueue incoming messages for sequential processing.
     """
-    try:
-        chat = message.Info.MessageSource.Chat
-        sender_id = message.Info.MessageSource.Chat.User
-        text = (message.Message.conversation or
-                message.Message.extendedTextMessage.text or
-                message.Message.imageMessage.caption or
-                message.Message.documentMessage.caption or
-                "")
-        from_me = message.Info.MessageSource.IsFromMe
-        timestamp = message.Info.Timestamp // 1000
-        sender_name = message.Info.Pushname or "User"
+    message_queue.put((client, message))
 
-        log.info(f"Message from {sender_name} ({sender_id}): {text}")
-        log.debug(f"Raw message info: {message}")
+# Start the message worker thread
+def message_worker():
+    while True:
+        client, message = message_queue.get()
+        try:
+            process_message(client, message)
+        except Exception as e:
+            log.error(f"Error processing message: {e}")
+        finally:
+            message_queue.task_done()
 
-        # Save raw message object to a file
-        message_filename = f"messages/{int(time.time())}.txt"
-        with open(message_filename, "w", encoding="utf-8") as file:
-            file.write(str(message))
-        log.debug(f"Saved raw message to {message_filename}")
-
-        # Check if the message is older than one minute
-        if time.time() - timestamp > 60:
-            log.info(f"Message from {sender_name} ({sender_id}) is older than one minute; skipping further processing.")
-            return
-
-        # Mark as read
-        client.mark_read(
-            message.Info.ID,
-            chat=chat,
-            sender=message.Info.MessageSource.Sender,
-            receipt=ReceiptType.READ
-        )
-        log.debug(f"Marked message {message.Info.ID} as read.")
-
-        # Rate limiting: only respond if under the limit
-        if not can_respond_to_user(sender_id):
-            log.info(f"Rate limit reached for {sender_id}; skipping response.")
-            return
-
-        # Send typing notification (composing)
-        client.send_chat_presence(jid=chat, state=ChatPresence.CHAT_PRESENCE_COMPOSING, media=ChatPresenceMedia.CHAT_PRESENCE_MEDIA_TEXT)
-
-        # Check for a command and process it if present.
-        if handle_commands(client, chat, sender_id, text):
-            # If a command was processed, send paused notification and do not process further.
-            client.send_chat_presence(jid=chat, state=ChatPresence.CHAT_PRESENCE_PAUSED, media=ChatPresenceMedia.CHAT_PRESENCE_MEDIA_TEXT)
-            return
-
-        # Save the incoming message to the DB
-        save_message(sender_id, text, timestamp, from_me)
-        log.debug(f"Saved incoming message for user {sender_id} at timestamp {timestamp}.")
-
-        # Process links (if any)
-        handle_link(client, message, sender_id, sender_name, text)
-
-        # Process file attachments if present
-        if message.Info.Type == "media" and not message.Info.MediaType == "url":
-            handle_file(client, message)
-
-        log.info(f"Generating final response for {sender_id}...")
-        handle_final_response(client, chat, sender_id, text)
-        record_user_response(sender_id)
-
-        # After responding, send paused notification
-        client.send_chat_presence(jid=chat, state=ChatPresence.CHAT_PRESENCE_PAUSED, media=ChatPresenceMedia.CHAT_PRESENCE_MEDIA_TEXT)
-
-    except Exception as e:
-        log.error(f"Error in on_message handler: {e}")
+threading.Thread(target=message_worker, daemon=True).start()
