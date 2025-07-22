@@ -1,6 +1,7 @@
 # whatsapp.py
 import re
 import time
+import random
 from collections import defaultdict, deque
 from neonize.client import NewClient, JID
 from neonize.events import MessageEv, HistorySyncEv
@@ -44,6 +45,7 @@ def handle_link(client: NewClient, message: MessageEv, sender_id, sender_name, t
 
     # Send wait message
     wait_message = generate_wait_message(text)
+    time.sleep(random.uniform(2, 5))  # Add random delay before sending wait message
     client.reply_message(wait_message, message)
     save_message(sender_id, wait_message, int(time.time()), True)
     log.info(f"Sent wait message to {sender_name} for link processing: {wait_message}")
@@ -146,6 +148,7 @@ def handle_final_response(client: NewClient, chat: JID, sender_id: str, text: st
     """Generates and sends the final response using the LLM."""
     final_answer = generate_final_response(user_id=sender_id, scraped_text=USER_SCRAPED_CONTENT.get(sender_id, ""), user_text=text)
     log.debug(f"Final answer generated: {final_answer}")
+    time.sleep(random.uniform(2, 5))  # Add random delay before sending final response
     client.send_message(to=chat, message=final_answer)
     save_message(user_id=sender_id, message=final_answer, timestamp=int(time.time()), from_me=True)
     log.info(f"Sent final response to {sender_id}.")
