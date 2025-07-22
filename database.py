@@ -1,10 +1,9 @@
 import sqlite3
 from config import CONV_DB_PATH, MAX_MESSAGES
+from neonize.utils import log
 
 def init_db():
     """Initialize the SQLite database with a unique constraint."""
-    # create folder if it doesn't exist
-
     conn = sqlite3.connect(CONV_DB_PATH)
     cursor = conn.cursor()
     cursor.execute("""
@@ -31,8 +30,10 @@ def save_message(user_id, message_content, timestamp, from_me):
         """, (user_id, message_content, timestamp, from_me))
         conn.commit()
     except sqlite3.IntegrityError:
-        # A message with the same (user_id, message_content, timestamp, from_me) already exists
-        pass
+        log.debug(f"Message already exists for user {user_id}: {message_content}")
+    except Exception as e:
+        log.error(f"Failed to save message for user {user_id}: {e}")
+        conn.rollback()
     finally:
         conn.close()
 
@@ -65,8 +66,6 @@ def get_recent_messages(user_id):
     """, (user_id, MAX_MESSAGES))
     results = cursor.fetchall()
     conn.close()
-
-    # Reverse the results to return them in chronological order
     return results[::-1]
 
 def delete_messages(user_id):
@@ -78,9 +77,7 @@ def delete_messages(user_id):
     conn.close()
 
 def get_recent_messages_formatted(user_id):
-    # Build a minimal text representation of the conversation
     conversation_history = get_recent_messages(user_id)
-
     lines = []
     for msg_content, msg_timestamp, from_me in conversation_history:
         if from_me:
@@ -88,7 +85,4 @@ def get_recent_messages_formatted(user_id):
         else:
             speaker = "USER"
         lines.append(f"{speaker}: {msg_content}")
-
-    conversation_text = "\n".join(lines)
-
-    return conversation_text
+    return "\n".join(lines)

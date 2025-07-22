@@ -13,12 +13,8 @@ from scraping import scrape_text
 import os
 from llm import (
     generate_wait_message,
-    generate_final_response,
-    generate_first_time_greeting
+    generate_final_response
 )
-
-# Ensure converted directory exists
-os.makedirs("converted", exist_ok=True)
 
 USER_SCRAPED_CONTENT = {}
 
@@ -35,13 +31,6 @@ def can_respond_to_user(user_id):
 
 def record_user_response(user_id):
     user_message_timestamps[user_id].append(time.time())
-
-def handle_greeting(client: NewClient, chat: JID, sender_id, sender_name, text):
-    """Handles first-time greeting for a new conversation."""
-    greeting = generate_first_time_greeting(sender_name, text)
-    client.send_message(chat, greeting)
-    log.info(f"Sent greeting to {sender_name} ({sender_id}).")
-    save_message(sender_id, greeting, int(time.time()), True)
 
 def handle_link(client: NewClient, message: MessageEv, sender_id, sender_name, text):
     """Handles link detection and scraping."""
@@ -136,7 +125,7 @@ def handle_file(client: NewClient, message: MessageEv):
         client.send_message(chat, f"[SYSTEM] Error saving converted file: {e}")
     return
 
-def handle_commands(client, chat, sender_id, text):
+def handle_commands(client: NewClient, chat: JID, sender_id: str, text: str):
     """
     Checks for special commands. If one of the commands is detected and the sender's number
     matches a specific number, it sends back pre-formatted info and returns True.
@@ -153,16 +142,12 @@ def handle_commands(client, chat, sender_id, text):
 
     return False
 
-def handle_final_response(client, chat, sender_id, text, conversation_history):
+def handle_final_response(client: NewClient, chat: JID, sender_id: str, text: str):
     """Generates and sends the final response using the LLM."""
-    final_answer = generate_final_response(
-        previous_messages=conversation_history,
-        scraped_text=USER_SCRAPED_CONTENT.get(sender_id, ""),
-        user_text=text
-    )
+    final_answer = generate_final_response(user_id=sender_id, scraped_text=USER_SCRAPED_CONTENT.get(sender_id, ""), user_text=text)
     log.debug(f"Final answer generated: {final_answer}")
-    client.send_message(chat, final_answer)
-    save_message(sender_id, final_answer, int(time.time()), True)
+    client.send_message(to=chat, message=final_answer)
+    save_message(user_id=sender_id, message=final_answer, timestamp=int(time.time()), from_me=True)
     log.info(f"Sent final response to {sender_id}.")
 
 # --- Main event handlers ---
@@ -259,18 +244,9 @@ def on_message(client: NewClient, message: MessageEv):
             client.send_chat_presence(jid=chat, state=ChatPresence.CHAT_PRESENCE_PAUSED, media=ChatPresenceMedia.CHAT_PRESENCE_MEDIA_TEXT)
             return
 
-        # Determine if this is the first message from the user
-        previous_messages = get_messages(sender_id)
-        is_first_message = len(previous_messages) == 0
-        log.debug(f"User {sender_id} has {len(previous_messages)} previous messages; is_first_message={is_first_message}")
-
         # Save the incoming message to the DB
         save_message(sender_id, text, timestamp, from_me)
         log.debug(f"Saved incoming message for user {sender_id} at timestamp {timestamp}.")
-
-        # Process greeting for a first-time message
-        if is_first_message:
-            handle_greeting(client, chat, sender_id, sender_name, text)
 
         # Process links (if any)
         handle_link(client, message, sender_id, sender_name, text)
@@ -279,14 +255,8 @@ def on_message(client: NewClient, message: MessageEv):
         if message.Info.Type == "media" and not message.Info.MediaType == "url":
             handle_file(client, message)
 
-        # Retrieve a formatted conversation history for context
-        conversation_history = get_recent_messages_formatted(sender_id)
-        log.debug(f"Retrieved conversation history for {sender_id}: {conversation_history}")
-
-
-
         log.info(f"Generating final response for {sender_id}...")
-        handle_final_response(client, chat, sender_id, text, conversation_history)
+        handle_final_response(client, chat, sender_id, text)
         record_user_response(sender_id)
 
         # After responding, send paused notification
