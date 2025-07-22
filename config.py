@@ -5,7 +5,6 @@ load_dotenv()
 
 AI_ASSISTANT_NAME = os.getenv("AI_ASSISTANT_NAME")
 
-OPENAI_API_URL = os.getenv("OPENAI_API_URL")
 OPENAI_MODEL_NAME = os.getenv("OPENAI_MODEL_NAME")
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 
