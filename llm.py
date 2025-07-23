@@ -40,6 +40,15 @@ def generate_final_response(user_id, scraped_text, user_text):
     logging.debug(f"Final prompt generated: {final_prompt}")
     return _call_openai_api(final_prompt, user_text).strip()
 
-def generate_wait_message(user_text):
+def generate_wait_message(user_text=None, user_id=None):
+    if user_text is None:
+        user_text = get_recent_messages_formatted(user_id=user_id)
     prompt = """Please produce exactly one short sentence that says something along the lines of: \"Please wait, just one moment\" but in the same language the user wrote in. Keep it very short."""
     return _call_openai_api(prompt, user_text).strip()
+
+def generate_error_message(user_text=None, user_id=None):
+    if user_text is None:
+        user_text = get_recent_messages_formatted(user_id=user_id)
+    prompt = """Please produce exactly one short sentence that says something along the lines of: \"An error occurred, please try again later\" but in the same language the user wrote in. Keep it very short."""
+    return _call_openai_api(prompt, user_text).strip()
+

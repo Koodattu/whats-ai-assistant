@@ -2,6 +2,7 @@ import re
 import time
 import random
 from collections import defaultdict, deque
+import uuid
 from neonize.client import NewClient, JID
 from neonize.events import MessageEv, HistorySyncEv
 from neonize.utils.enum import ReceiptType, ChatPresence, ChatPresenceMedia
@@ -15,7 +16,11 @@ from scraping import scrape_text
 import os
 from llm import (
     generate_wait_message,
-    generate_final_response
+    generate_final_response,
+    generate_error_message
+)
+from tool_calls import (
+    describe_image_with_gpt,
 )
 from config import SKIP_HISTORY_SYNC
 from filelogger import FileLogger
@@ -34,6 +39,9 @@ def process_message(client: NewClient, message: MessageEv):
                 message.Message.documentMessage.caption or
                 "")
         from_me = message.Info.MessageSource.IsFromMe
+        is_group = message.Info.MessageSource.IsGroup
+        is_edit = message.IsEdit
+        is_viewonce = message.IsViewOnce or message.IsViewOnceV2 or message.IsViewOnceV2Extension
         timestamp = message.Info.Timestamp // 1000
         sender_name = message.Info.Pushname or "User"
 
@@ -65,6 +73,16 @@ def process_message(client: NewClient, message: MessageEv):
             log.info(f"Rate limit reached for {sender_id}; skipping response.")
             return
 
+        # Skip messages from the bot itself
+        if chat.User == sender_id and from_me:
+            log.info(f"Skipping message from bot itself: {sender_id}")
+            return
+
+        # Skip group, edit, and view once messages
+        if is_group or is_edit or is_viewonce:
+            log.info(f"Skipping group/edit/view once message from {sender_id}.")
+            return
+
         # Send typing notification (composing)
         client.send_chat_presence(jid=chat, state=ChatPresence.CHAT_PRESENCE_COMPOSING, media=ChatPresenceMedia.CHAT_PRESENCE_MEDIA_TEXT)
 
@@ -83,7 +101,7 @@ def process_message(client: NewClient, message: MessageEv):
 
         # Process file attachments if present
         if message.Info.Type == "media" and not message.Info.MediaType == "url":
-            handle_file(client, message)
+            handle_file(client, message, text, sender_id)
 
         log.info(f"Generating final response for {sender_id}...")
         handle_final_response(client, chat, sender_id, text)
@@ -122,7 +140,7 @@ def handle_link(client: NewClient, message: MessageEv, sender_id, sender_name, t
     log.info(f"Link detected: {link}")
 
     # Send wait message
-    wait_message = generate_wait_message(text)
+    wait_message = generate_wait_message(user_text=text, user_id=sender_id)
     time.sleep(random.uniform(2, 5))  # Add random delay before sending wait message
     client.reply_message(wait_message, message)
     save_message(sender_id, wait_message, int(time.time()), True)
@@ -162,23 +180,34 @@ def convert_docx_to_markdown(docx_path):
     except Exception as e:
         return f"Error reading DOCX: {e}"
 
-def handle_file(client: NewClient, message: MessageEv):
+def handle_file(client: NewClient, message: MessageEv, user_text: str, sender_id: str):
     """Handles file attachments (downloads the file, converts, and saves as text)."""
-    file_name = (getattr(message.Message.documentMessage, 'fileName', None) or
-                 getattr(message.Message.imageMessage, 'fileName', None) or "file")
+    file_name = None
+    if hasattr(message.Message, "documentMessage") and message.Message.documentMessage:
+        file_name = getattr(message.Message.documentMessage, "fileName", None)
+    elif hasattr(message.Message, "imageMessage") and message.Message.imageMessage:
+        file_name = f"{int(time.time())}_{uuid.uuid4()}.jpeg"
+
+    if not file_name:
+        log.info("No file name found in the message; skipping file handling.")
+        return
+
     chat = message.Info.MessageSource.Chat
-    client.send_message(chat, f"[SYSTEM] Processing file: {file_name}...")
+    client.send_message(chat, generate_wait_message(user_text=user_text, user_id=sender_id))
+
     try:
         client.download_any(message=message.Message, path=f"./downloads/{file_name}")
         log.info(f"Downloaded file: {file_name}")
     except Exception as e:
         log.error(f"Failed to download file: {e}")
-        client.send_message(chat, f"[SYSTEM] Failed to download file: {e}")
+        client.send_message(chat, generate_error_message(user_text=user_text, user_id=sender_id))
         return
 
     file_extension = os.path.splitext(file_name)[1].lower()
     submission_markdown = None
-    if file_extension == ".pdf":
+    if file_extension == ".jpeg":
+        submission_markdown = describe_image_with_gpt(f"./downloads/{file_name}")
+    elif file_extension == ".pdf":
         submission_markdown = convert_pdf_to_markdown(f"./downloads/{file_name}")
     elif file_extension == ".docx":
         submission_markdown = convert_docx_to_markdown(f"./downloads/{file_name}")
@@ -189,7 +218,8 @@ def handle_file(client: NewClient, message: MessageEv):
         except Exception as e:
             submission_markdown = f"Error reading TXT: {e}"
     else:
-        client.send_message(chat, f"[SYSTEM] File type '{file_extension}' is not supported.")
+        log.error(f"Unsupported file type: {file_extension}")
+        client.send_message(chat, generate_error_message(user_text=user_text, user_id=sender_id))
         return
 
     base_filename = os.path.splitext(os.path.basename(file_name))[0]
