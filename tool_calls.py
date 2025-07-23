@@ -13,8 +13,9 @@ from config import (
 import openai
 import logging
 import requests
-from bs4 import BeautifulSoup
 from scraping import scrape_text
+from filelogger import FileLogger
+fileLogger = FileLogger()
 
 client = openai.OpenAI(api_key=OPENAI_API_KEY)
 
@@ -201,6 +202,7 @@ def duckduckgo_web_search(query, num_results=3):
     try:
         resp = requests.get(search_url, params=params, timeout=10)
         data = resp.json()
+        fileLogger.log(f"[DUCKDUCKGO_WEB_SEARCH] [DATA]: {str(data)}")
         links = []
         for topic in data.get("RelatedTopics", []):
             if "FirstURL" in topic:
@@ -217,6 +219,7 @@ def duckduckgo_web_search(query, num_results=3):
                 results.append({"url": url, "snippet": text})
             except Exception as e:
                 results.append({"url": url, "snippet": f"Failed to scrape: {e}"})
+        fileLogger.log(f"[DUCKDUCKGO_WEB_SEARCH] [RESULTS]: {str(results)}")
         return results
     except Exception as e:
         return [{"error": f"DuckDuckGo search failed: {e}"}]

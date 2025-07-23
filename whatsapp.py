@@ -18,6 +18,8 @@ from llm import (
     generate_final_response
 )
 from config import SKIP_HISTORY_SYNC
+from filelogger import FileLogger
+fileLogger = FileLogger()
 
 # Global message queue for processing incoming messages sequentially
 message_queue = queue.Queue()
@@ -281,6 +283,7 @@ def on_message(client: NewClient, message: MessageEv):
     Enqueue incoming messages for sequential processing.
     """
     message_queue.put((client, message))
+    fileLogger.log(f"[NEW_MESSAGE] {message}")
 
 # Start the message worker thread
 def message_worker():
