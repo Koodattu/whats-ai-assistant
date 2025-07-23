@@ -12,6 +12,9 @@ from config import (
 )
 import openai
 import logging
+import requests
+from bs4 import BeautifulSoup
+from scraping import scrape_text
 
 client = openai.OpenAI(api_key=OPENAI_API_KEY)
 
@@ -152,13 +155,9 @@ def describe_image_with_gpt(image_path_or_url, prompt_text="Describe the image."
     # Determine if input is a file path or URL
     if os.path.isfile(image_path_or_url):
         mime_type, _ = mimetypes.guess_type(image_path_or_url)
-        if not mime_type:
-            mime_type = "image/jpeg"
         with open(image_path_or_url, "rb") as img_file:
             b64_image = base64.b64encode(img_file.read()).decode("utf-8")
         image_url = f"data:{mime_type};base64,{b64_image}"
-    else:
-        image_url = image_path_or_url
 
     try:
         completion = client.chat.completions.create(
@@ -179,19 +178,45 @@ def describe_image_with_gpt(image_path_or_url, prompt_text="Describe the image."
         logging.error(f"OpenAI Vision API Request Failed: {e}")
         return "Error with OpenAI Vision API request."
 
-def transcribe_audio_with_whisper(audio_file_path, prompt=None):
+def transcribe_audio_with_whisper(audio_file_path):
     """
     Transcribe an audio file using OpenAI Whisper API via openai-python.
     Accepts a local audio file path. Optionally, a prompt for better accuracy.
     """
     try:
         with open(audio_file_path, "rb") as audio_file:
-            params = {"model": "whisper-1", "file": audio_file}
-            if prompt:
-                params["prompt"] = prompt
-            transcription = client.audio.transcriptions.create(**params)
-        # The response object has a .text attribute
-        return getattr(transcription, "text", None) or transcription
+            transcription = client.audio.transcriptions.create(model="whisper-1", file=audio_file)
+        return transcription.text.strip()
     except Exception as e:
         logging.error(f"OpenAI Whisper API Request Failed: {e}")
         return "Error with OpenAI Whisper API request."
+
+def duckduckgo_web_search(query, num_results=3):
+    """
+    Search DuckDuckGo and scrape the top N websites for content snippets.
+    Returns a list of dicts: [{"url": ..., "snippet": ...}, ...]
+    """
+    search_url = "https://api.duckduckgo.com/"
+    params = {"q": query, "format": "json", "no_redirect": 1, "no_html": 1}
+    try:
+        resp = requests.get(search_url, params=params, timeout=10)
+        data = resp.json()
+        links = []
+        for topic in data.get("RelatedTopics", []):
+            if "FirstURL" in topic:
+                links.append(topic["FirstURL"])
+            elif "Topics" in topic:
+                for subtopic in topic["Topics"]:
+                    if "FirstURL" in subtopic:
+                        links.append(subtopic["FirstURL"])
+        links = links[:num_results]
+        results = []
+        for url in links:
+            try:
+                text = scrape_text(url)
+                results.append({"url": url, "snippet": text})
+            except Exception as e:
+                results.append({"url": url, "snippet": f"Failed to scrape: {e}"})
+        return results
+    except Exception as e:
+        return [{"error": f"DuckDuckGo search failed: {e}"}]
