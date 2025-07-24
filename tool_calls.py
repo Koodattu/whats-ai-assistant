@@ -2,7 +2,6 @@ import random
 import base64
 import mimetypes
 import os
-from enum import Enum
 from pydantic import BaseModel
 from PIL import Image
 import io
@@ -13,7 +12,6 @@ from config import (
 import openai
 from openai.types.chat import ParsedFunctionToolCall
 import logging
-import requests
 from scraping import scrape_text
 from ddgs import DDGS
 from filelogger import FileLogger
@@ -56,13 +54,24 @@ available_tools = [
     ),
 ]
 
-def poll_llm_for_tool_choice(user_message) -> ParsedFunctionToolCall | None:
+def poll_llm_for_tool_choice(user_message, past_user_message, user_context) -> ParsedFunctionToolCall | None:
     """
     Poll the LLM to decide which tool to call for a user request.
     Returns the tool call(s) and arguments if any.
     """
+    system_prompt = f"""Select zero or one tool to call based on the user message.
+    We don't want to call tools for every user message, only when necessary.
+    If you don't need to call a tool, just return an empty list.
+    Here is the past user message:
+    ---
+    {past_user_message}
+    ---
+    Here is the user given additional context:
+    ---
+    {user_context}
+    ---
+    """
     messages = []
-    system_prompt = "Select zero or one tool to call based on the user message. We don't want to call tools for every user message, only when necessary. If you don't need to call a tool, just return an empty list."
     messages.append({"role": "system", "content": system_prompt})
     messages.append({"role": "user", "content": user_message})
     try:

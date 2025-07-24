@@ -11,7 +11,7 @@ import pdfplumber
 from docx import Document
 import threading
 import queue
-from database import save_message, delete_messages
+from database import save_message, delete_messages, get_recent_messages_formatted
 from scraping import scrape_text
 import os
 from llm import (
@@ -129,6 +129,7 @@ def process_message(client: NewClient, message: MessageEv):
         log.error(f"Error in process_message handler: {e}")
 
 USER_SCRAPED_CONTENT = defaultdict(list)  # user_id -> list of UserSessionContentItem
+USER_LATEST_IMAGE = defaultdict(lambda: None)  # user_id -> latest image path
 
 # Rate limiting: user_id -> deque of timestamps (seconds)
 user_message_timestamps = defaultdict(lambda: deque(maxlen=5))
@@ -240,6 +241,7 @@ def handle_file(client: NewClient, message: MessageEv, user_text: str, sender_id
     if file_extension == ".jpeg":
         submission_markdown = describe_image_with_gpt(f"./downloads/{file_name}")
         item_type = "image"
+        USER_LATEST_IMAGE[sender_id] = f"./downloads/{file_name}"
     elif file_extension == ".ogg":
         submission_markdown = transcribe_audio_with_whisper(f"./downloads/{file_name}")
         item_type = "audio"
@@ -313,7 +315,7 @@ def handle_final_response(client: NewClient, chat: JID, sender_id: str, text: st
     scraped_text = "\n".join([
         f"[{item.type.upper()}] {item.source}\n{item.content}" for item in session_items
     ])
-    tool_usage_result = process_llm_tools(text, client, chat)
+    tool_usage_result = process_llm_tools(text, scraped_text, client, chat, sender_id)
     final_answer = generate_final_response(user_id=sender_id, scraped_text=scraped_text, user_text=text, tool_usage_result=tool_usage_result)
     log.debug(f"Final answer generated: {final_answer}")
     elapsed = time.time() - start_time
@@ -324,11 +326,11 @@ def handle_final_response(client: NewClient, chat: JID, sender_id: str, text: st
     save_message(user_id=sender_id, message_content=final_answer, timestamp=int(time.time()), from_me=True)
     log.info(f"Sent final response to {sender_id}.")
 
-def process_llm_tools(user_message: str, client: NewClient, chat: JID):
+def process_llm_tools(user_message: str, scraped_text: str, client: NewClient, chat: JID, sender_id: str):
     """
     Handles entire LLM tool processing flow.
     """
-    tool_call = poll_llm_for_tool_choice(user_message)
+    tool_call = poll_llm_for_tool_choice(user_message, get_recent_messages_formatted(sender_id), scraped_text)
     if not tool_call:
         log.info("No tool calls needed for user message.")
         return "No tool calls needed."
@@ -370,15 +372,16 @@ def process_llm_tools(user_message: str, client: NewClient, chat: JID):
         # Call the image generation tool, it returns the filepath
         client.send_message(chat, generate_wait_message(user_text=user_message, user_id=chat.User))
         image_path = generate_image_with_openai(prompt)
+        USER_LATEST_IMAGE[sender_id] = image_path
         if not image_path:
             return "Error generating image."
         client.send_image(chat, image_path)
         # Here you would handle the image file, e.g., save or send it
         return f"{tool_call.function.name}: Image generated successfully. It will be sent before this message. Please act like you just generated and sent the image successfully for the user."
     elif tool_call.function.name == "edit_image_tool":
-        # TODO
         log.info("Processing image editing tool call.")
         prompt = getattr(tool_call.function.parsed_arguments, "prompt", None)
+        image_path = USER_LATEST_IMAGE.get(sender_id, None)
         if not image_path or not prompt:
             log.error("Missing image path or prompt for image editing.")
             return "Missing image path or prompt for image editing."
