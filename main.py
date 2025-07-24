@@ -46,6 +46,8 @@ def main():
     os.makedirs("messages", exist_ok=True)
     os.makedirs("downloads", exist_ok=True)
     os.makedirs("converted", exist_ok=True)
+    os.makedirs("images", exist_ok=True)
+    os.makedirs("audio", exist_ok=True)
 
     # Initialize DB
     init_db()

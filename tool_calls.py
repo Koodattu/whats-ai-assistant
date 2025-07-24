@@ -11,9 +11,11 @@ from config import (
     OPENAI_API_KEY
 )
 import openai
+from openai.types.chat import ParsedFunctionToolCall
 import logging
 import requests
 from scraping import scrape_text
+from ddgs import DDGS
 from filelogger import FileLogger
 fileLogger = FileLogger()
 
@@ -45,7 +47,7 @@ available_tools = [
     openai.pydantic_function_tool(
         GenerateTTSTool,
         name="generate_tts_tool",
-        description="Generate speech audio from a user prompt. Only provide the text to be spoken."
+        description="Generate speech audio from text. Only provide the text to be spoken. This should be used when the user request audio output.",
     ),
     openai.pydantic_function_tool(
         WebSearchTool,
@@ -54,7 +56,7 @@ available_tools = [
     ),
 ]
 
-def poll_llm_for_tool_choice(user_message):
+def poll_llm_for_tool_choice(user_message) -> ParsedFunctionToolCall | None:
     """
     Poll the LLM to decide which tool to call for a user request.
     Returns the tool call(s) and arguments if any.
@@ -70,40 +72,43 @@ def poll_llm_for_tool_choice(user_message):
             tools=available_tools,
         )
         fileLogger.log(f"[POLL_LLM_FOR_TOOL_CHOICE] [COMPLETION]: {str(completion)}")
-        tool_calls = completion.choices[0].message.tool_calls or []
-        fileLogger.log(f"[POLL_LLM_FOR_TOOL_CHOICE] [TOOL_CALLS]: {str(tool_calls)}")
-        return tool_calls
+        tool_call = completion.choices[0].message.tool_calls[0] or None
+        fileLogger.log(f"[POLL_LLM_FOR_TOOL_CHOICE] [TOOL_CALLS]: {str(tool_call)}")
+        return tool_call
     except Exception as e:
         logging.error(f"Tool polling LLM failed: {e}")
-        return []
+        return None
 
-def text_to_speech_with_openai(text, model="gpt-4o-mini-tts", voice="alloy", response_format="wav"):
+def text_to_speech_with_openai(text):
     """
     Generate speech audio from text using OpenAI's TTS API.
-    Returns the audio bytes (e.g., MP3).
+    Returns the audio file path.
     """
     try:
         response = client.audio.speech.create(
-            model=model,
+            model="gpt-4o-mini-tts",
             input=text,
-            voice=voice,
-            response_format=response_format,
+            voice="alloy",
+            response_format="mp3",
         )
-        return response.content
+        filename = f"tts_output_{random.randint(1, 9999999)}.mp3"
+        filepath = os.path.join("audio", filename)
+        with open(filepath, "wb") as audio_file:
+            audio_file.write(response.content)
+        logging.info(f"Audio saved to {filepath}")
+        return filepath
     except Exception as e:
         logging.error(f"OpenAI TTS API Request Failed: {e}")
         return None
 
 def generate_image_with_openai(prompt):
     """
-    Generate an image from a prompt using OpenAI's image API (DALL-E).
-    Returns base64 string if response_format is 'b64_json'.
+    Generate an image from a prompt using OpenAI's image API (GPT-Image-1).
     """
     try:
         response = client.images.generate(
             prompt=prompt,
             model="gpt-image-1",
-            response_format="b64_json",
             quality="medium",
             n=1
         )
@@ -120,9 +125,8 @@ def generate_image_with_openai(prompt):
 
 def edit_image_with_openai(image_path, prompt):
     """
-    Edit an image using OpenAI's image API (DALL-E).
+    Edit an image using OpenAI's image API (GPT-Image-1).
     Requires an input image file path and a prompt.
-    Returns base64 string if response_format is 'b64_json'.
     """
     try:
         with open(image_path, "rb") as image_file:
@@ -130,7 +134,6 @@ def edit_image_with_openai(image_path, prompt):
                 image=image_file,
                 prompt=prompt,
                 model="gpt-image-1",
-                response_format="b64_json",
                 quality="medium",
                 n=1
             )
@@ -188,34 +191,21 @@ def transcribe_audio_with_whisper(audio_file_path):
         logging.error(f"OpenAI Whisper API Request Failed: {e}")
         return "Error with OpenAI Whisper API request."
 
-def duckduckgo_web_search(query, num_results=3):
+def web_search(query):
     """
-    Search DuckDuckGo and scrape the top N websites for content snippets.
-    Returns a list of dicts: [{"url": ..., "snippet": ...}, ...]
+    Run a web search using DDGS and scrape the top N websites for content.
     """
-    search_url = "https://api.duckduckgo.com/"
-    params = {"q": query, "format": "json", "no_redirect": 1, "no_html": 1}
     try:
-        resp = requests.get(search_url, params=params, timeout=10)
-        data = resp.json()
-        fileLogger.log(f"[DUCKDUCKGO_WEB_SEARCH] [DATA]: {str(data)}")
-        links = []
-        for topic in data.get("RelatedTopics", []):
-            if "FirstURL" in topic:
-                links.append(topic["FirstURL"])
-            elif "Topics" in topic:
-                for subtopic in topic["Topics"]:
-                    if "FirstURL" in subtopic:
-                        links.append(subtopic["FirstURL"])
-        links = links[:num_results]
+        ddgs = DDGS().text(query, max_results=3, backend="duckduckgo")
+        fileLogger.log(f"[WEB_SEARCH] [DDGS RESULTS]: {str(ddgs)}")
         results = []
-        for url in links:
+        for result in ddgs:
             try:
-                text = scrape_text(url)
-                results.append({"url": url, "snippet": text})
+                text = scrape_text(result['href'])
+                results.append({"url": result['href'], "snippet": text})
             except Exception as e:
-                results.append({"url": url, "snippet": f"Failed to scrape: {e}"})
-        fileLogger.log(f"[DUCKDUCKGO_WEB_SEARCH] [RESULTS]: {str(results)}")
+                results.append({"url": result['href'], "snippet": f"Failed to scrape: {e}"})
+        fileLogger.log(f"[WEB_SEARCH] [RESULTS]: {str(results)}")
         return results
     except Exception as e:
-        return [{"error": f"DuckDuckGo search failed: {e}"}]
+        return [{"error": f"Web search failed: {e}"}]

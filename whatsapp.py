@@ -26,7 +26,7 @@ from tool_calls import (
     generate_image_with_openai,
     edit_image_with_openai,
     transcribe_audio_with_whisper,
-    duckduckgo_web_search
+    web_search
 )
 from config import SKIP_HISTORY_SYNC
 from filelogger import FileLogger
@@ -116,7 +116,7 @@ def process_message(client: NewClient, message: MessageEv):
 
         # Process file attachments if present
         if message.Info.Type == "media" and not message.Info.MediaType == "url":
-            handle_file(client, message, text, sender_id)
+            text = handle_file(client, message, text, sender_id)
 
         log.info(f"Generating final response for {sender_id}...")
         handle_final_response(client, chat, sender_id, text)
@@ -202,18 +202,29 @@ def convert_docx_to_markdown(docx_path):
 
 def handle_file(client: NewClient, message: MessageEv, user_text: str, sender_id: str):
     """Handles file attachments (downloads the file, converts, and saves as text, and adds to session context)."""
+    log.info(f"Handling file attachment for user {sender_id}.")
     file_name = None
-    if hasattr(message.Message, "documentMessage") and message.Message.documentMessage:
-        file_name = getattr(message.Message.documentMessage, "fileName", None)
-    elif hasattr(message.Message, "imageMessage") and message.Message.imageMessage:
+    document_msg = getattr(message.Message, "documentMessage", None)
+    image_msg = getattr(message.Message, "imageMessage", None)
+    audio_msg = getattr(message.Message, "audioMessage", None)
+    if document_msg and getattr(document_msg, "fileName", None):
+        log.info("Processing document message.")
+        file_name = document_msg.fileName
+    elif image_msg and "jpeg" in getattr(image_msg, "mimetype", None):
+        log.info("Processing image message.")
         file_name = f"{int(time.time())}_{uuid.uuid4()}.jpeg"
+    elif audio_msg and "audio" in getattr(audio_msg, "mimetype", None):
+        log.info("Processing audio message.")
+        file_name = f"{int(time.time())}_{uuid.uuid4()}.ogg"
+    else:
+        log.info("Unknown message type; skipping file handling.")
 
     if not file_name:
         log.info("No file name found in the message; skipping file handling.")
         return
 
+    log.info(f"File name detected: {file_name}")
     chat = message.Info.MessageSource.Chat
-    client.send_message(chat, generate_wait_message(user_text=user_text, user_id=sender_id))
 
     try:
         client.download_any(message=message.Message, path=f"./downloads/{file_name}")
@@ -229,6 +240,10 @@ def handle_file(client: NewClient, message: MessageEv, user_text: str, sender_id
     if file_extension == ".jpeg":
         submission_markdown = describe_image_with_gpt(f"./downloads/{file_name}")
         item_type = "image"
+    elif file_extension == ".ogg":
+        submission_markdown = transcribe_audio_with_whisper(f"./downloads/{file_name}")
+        item_type = "audio"
+        return submission_markdown  # Return early for audio files
     elif file_extension == ".pdf":
         submission_markdown = convert_pdf_to_markdown(f"./downloads/{file_name}")
         item_type = "document"
@@ -248,25 +263,28 @@ def handle_file(client: NewClient, message: MessageEv, user_text: str, sender_id
         client.send_message(chat, generate_error_message(user_text=user_text, user_id=sender_id))
         return
 
-    # Add to session context
-    USER_SCRAPED_CONTENT[sender_id].append(UserSessionContentItem(
-        type_=item_type,
-        source=file_name,
-        content=submission_markdown
-    ))
+    if not item_type == "audio":
+        # Add to session context
+        USER_SCRAPED_CONTENT[sender_id].append(UserSessionContentItem(
+            type_=item_type,
+            source=file_name,
+            content=submission_markdown
+        ))
 
-    base_filename = os.path.splitext(os.path.basename(file_name))[0]
-    txt_filename = f"{base_filename}.txt"
-    txt_filepath = os.path.join("converted", txt_filename)
-    try:
-        with open(txt_filepath, "w", encoding="utf-8") as f:
-            f.write(submission_markdown)
-        log.info(f"Converted file saved to: {txt_filepath}")
-        client.send_message(chat, f"[SYSTEM] File processed and saved for future use.")
-    except Exception as e:
-        log.error(f"Error saving converted file: {e}")
-        client.send_message(chat, f"[SYSTEM] Error saving converted file: {e}")
-    return
+    if item_type == "document":
+        log.info(f"Added document content for {sender_id}.")
+        base_filename = os.path.splitext(os.path.basename(file_name))[0]
+        txt_filename = f"{base_filename}.txt"
+        txt_filepath = os.path.join("converted", txt_filename)
+        try:
+            with open(txt_filepath, "w", encoding="utf-8") as f:
+                f.write(submission_markdown)
+            log.info(f"Converted file saved to: {txt_filepath}")
+        except Exception as e:
+            log.error(f"Error saving converted file: {e}")
+
+    return user_text
+
 
 def handle_commands(client: NewClient, chat: JID, sender_id: str, text: str):
     """
@@ -288,7 +306,7 @@ def handle_commands(client: NewClient, chat: JID, sender_id: str, text: str):
 def handle_final_response(client: NewClient, chat: JID, sender_id: str, text: str):
     """Generates and sends the final response using the LLM."""
     # Start timer for total response delay
-    min_total_delay = random.uniform(5, 10)
+    min_total_delay = random.uniform(2, 5)
     start_time = time.time()
     # Concatenate all session content for user
     session_items = USER_SCRAPED_CONTENT.get(sender_id, [])
@@ -303,53 +321,75 @@ def handle_final_response(client: NewClient, chat: JID, sender_id: str, text: st
     if remaining > 0:
         time.sleep(remaining)
     client.send_message(to=chat, message=final_answer)
-    save_message(user_id=sender_id, message=final_answer, timestamp=int(time.time()), from_me=True)
+    save_message(user_id=sender_id, message_content=final_answer, timestamp=int(time.time()), from_me=True)
     log.info(f"Sent final response to {sender_id}.")
 
 def process_llm_tools(user_message: str, client: NewClient, chat: JID):
     """
     Handles entire LLM tool processing flow.
     """
-    tool_calls = poll_llm_for_tool_choice(user_message)
-    if not tool_calls:
+    tool_call = poll_llm_for_tool_choice(user_message)
+    if not tool_call:
         log.info("No tool calls needed for user message.")
         return "No tool calls needed."
 
-    tool_call = tool_calls[0]
-
-    if tool_call.name == "web_search_tool":
+    if tool_call.function.name == "web_search_tool":
         log.info("Processing web search tool call.")
-        search_query = tool_call.arguments.get("query", "")
+        search_query = getattr(tool_call.function.parsed_arguments, "query", None)
         if not search_query:
             log.error("No search query provided in tool call arguments.")
             return "No search query provided."
         # Call the web search tool
-        search_results = duckduckgo_web_search(search_query)
+        search_results = web_search(search_query)
         log.debug(f"Web search results: {search_results}")
         # Here you would process the search results and return them
         result_strings = []
         for result in search_results:
-            if "error" in result:
-                result_strings.append(result["error"])
-            else:
-                url = result.get("url", "")
-                snippet = result.get("snippet", "")
-                result_strings.append(f"{url}\n{snippet}\n")
-        return "\n".join(result_strings)
-    elif tool_call.name == "generate_image_tool":
+            url = result.get("url", "")
+            snippet = result.get("snippet", "")
+            result_strings.append(f"{url}\n{snippet}\n")
+        return tool_call.function.name + ": " + "\n".join(result_strings)
+    elif tool_call.function.name == "generate_tts_tool":
+        log.info("Processing text-to-speech tool call.")
+        text = getattr(tool_call.function.parsed_arguments, "text", None)
+        if not text:
+            log.error("No text provided for TTS generation.")
+            return "No text provided for TTS generation."
+        audio_path = text_to_speech_with_openai(text)
+        if not audio_path:
+            return "Error generating audio."
+        client.send_audio(chat, audio_path)
+        # Here you would handle the audio file, e.g., save or send it
+        return f"{tool_call.function.name}: Audio generated successfully. It will be sent before this message. Please act like you just generated and sent the audio successfully for the user."
+    elif tool_call.function.name == "generate_image_tool":
         log.info("Processing image generation tool call.")
-        prompt = tool_call.arguments.get("prompt", "")
+        prompt = getattr(tool_call.function.parsed_arguments, "prompt", None)
         if not prompt:
             log.error("No prompt provided for image generation.")
             return "No prompt provided for image generation."
         # Call the image generation tool, it returns the filepath
+        client.send_message(chat, generate_wait_message(user_text=user_message, user_id=chat.User))
         image_path = generate_image_with_openai(prompt)
         if not image_path:
             return "Error generating image."
         client.send_image(chat, image_path)
         # Here you would handle the image file, e.g., save or send it
-        return "Image generated successfully."
-
+        return f"{tool_call.function.name}: Image generated successfully. It will be sent before this message. Please act like you just generated and sent the image successfully for the user."
+    elif tool_call.function.name == "edit_image_tool":
+        # TODO
+        log.info("Processing image editing tool call.")
+        prompt = getattr(tool_call.function.parsed_arguments, "prompt", None)
+        if not image_path or not prompt:
+            log.error("Missing image path or prompt for image editing.")
+            return "Missing image path or prompt for image editing."
+        # Call the image editing tool, it returns the filepath
+        client.send_message(chat, generate_wait_message(user_text=user_message, user_id=chat.User))
+        edited_image_path = edit_image_with_openai(image_path, prompt)
+        if not edited_image_path:
+            return "Error editing image."
+        client.send_image(chat, edited_image_path)
+        # Here you would handle the edited image file, e.g., save or send it
+        return f"{tool_call.function.name}: Image edited successfully. It will be sent before this message. Please act like you just generated and sent the edited image successfully for the user."
     return "Something went wrong with tool processing."
 
 # --- Main event handlers ---
