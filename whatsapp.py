@@ -21,10 +21,25 @@ from llm import (
 )
 from tool_calls import (
     describe_image_with_gpt,
+    poll_llm_for_tool_choice,
+    text_to_speech_with_openai,
+    generate_image_with_openai,
+    edit_image_with_openai,
+    transcribe_audio_with_whisper,
+    duckduckgo_web_search
 )
 from config import SKIP_HISTORY_SYNC
 from filelogger import FileLogger
 fileLogger = FileLogger()
+
+# --- Session Content Item Class ---
+class UserSessionContentItem:
+    def __init__(self, type_: str, source: str, content: str):
+        self.type = type_  # 'link', 'document', 'image'
+        self.source = source  # filename or url
+        self.content = content
+    def __repr__(self):
+        return f"[{self.type}] {self.source}: {self.content[:60]}..."
 
 # Global message queue for processing incoming messages sequentially
 message_queue = queue.Queue()
@@ -113,7 +128,7 @@ def process_message(client: NewClient, message: MessageEv):
     except Exception as e:
         log.error(f"Error in process_message handler: {e}")
 
-USER_SCRAPED_CONTENT = {}
+USER_SCRAPED_CONTENT = defaultdict(list)  # user_id -> list of UserSessionContentItem
 
 # Rate limiting: user_id -> deque of timestamps (seconds)
 user_message_timestamps = defaultdict(lambda: deque(maxlen=5))
@@ -149,8 +164,13 @@ def handle_link(client: NewClient, message: MessageEv, sender_id, sender_name, t
     # Scrape the link and store the content
     scraped_content = scrape_text(link)
     log.debug(f"Scraped content (first 200 chars): {scraped_content[:200]}...")
-    USER_SCRAPED_CONTENT[sender_id] = f"\n[Scraped from {link}]\n{scraped_content}"
-    log.info(f"Updated scraped content for {sender_id}.")
+    # Add to session context
+    USER_SCRAPED_CONTENT[sender_id].append(UserSessionContentItem(
+        type_="link",
+        source=link,
+        content=scraped_content
+    ))
+    log.info(f"Added scraped link content for {sender_id}.")
 
 
 def convert_pdf_to_markdown(pdf_path):
@@ -181,7 +201,7 @@ def convert_docx_to_markdown(docx_path):
         return f"Error reading DOCX: {e}"
 
 def handle_file(client: NewClient, message: MessageEv, user_text: str, sender_id: str):
-    """Handles file attachments (downloads the file, converts, and saves as text)."""
+    """Handles file attachments (downloads the file, converts, and saves as text, and adds to session context)."""
     file_name = None
     if hasattr(message.Message, "documentMessage") and message.Message.documentMessage:
         file_name = getattr(message.Message.documentMessage, "fileName", None)
@@ -205,22 +225,35 @@ def handle_file(client: NewClient, message: MessageEv, user_text: str, sender_id
 
     file_extension = os.path.splitext(file_name)[1].lower()
     submission_markdown = None
+    item_type = None
     if file_extension == ".jpeg":
         submission_markdown = describe_image_with_gpt(f"./downloads/{file_name}")
+        item_type = "image"
     elif file_extension == ".pdf":
         submission_markdown = convert_pdf_to_markdown(f"./downloads/{file_name}")
+        item_type = "document"
     elif file_extension == ".docx":
         submission_markdown = convert_docx_to_markdown(f"./downloads/{file_name}")
+        item_type = "document"
     elif file_extension == ".txt":
         try:
             with open(f"./downloads/{file_name}", "r", encoding="utf-8") as f:
                 submission_markdown = f.read()
+            item_type = "document"
         except Exception as e:
             submission_markdown = f"Error reading TXT: {e}"
+            item_type = "document"
     else:
         log.error(f"Unsupported file type: {file_extension}")
         client.send_message(chat, generate_error_message(user_text=user_text, user_id=sender_id))
         return
+
+    # Add to session context
+    USER_SCRAPED_CONTENT[sender_id].append(UserSessionContentItem(
+        type_=item_type,
+        source=file_name,
+        content=submission_markdown
+    ))
 
     base_filename = os.path.splitext(os.path.basename(file_name))[0]
     txt_filename = f"{base_filename}.txt"
@@ -255,9 +288,15 @@ def handle_commands(client: NewClient, chat: JID, sender_id: str, text: str):
 def handle_final_response(client: NewClient, chat: JID, sender_id: str, text: str):
     """Generates and sends the final response using the LLM."""
     # Start timer for total response delay
-    min_total_delay = random.uniform(2, 5)
+    min_total_delay = random.uniform(5, 10)
     start_time = time.time()
-    final_answer = generate_final_response(user_id=sender_id, scraped_text=USER_SCRAPED_CONTENT.get(sender_id, ""), user_text=text)
+    # Concatenate all session content for user
+    session_items = USER_SCRAPED_CONTENT.get(sender_id, [])
+    scraped_text = "\n".join([
+        f"[{item.type.upper()}] {item.source}\n{item.content}" for item in session_items
+    ])
+    tool_usage_result = process_llm_tools(text, client, chat)
+    final_answer = generate_final_response(user_id=sender_id, scraped_text=scraped_text, user_text=text, tool_usage_result=tool_usage_result)
     log.debug(f"Final answer generated: {final_answer}")
     elapsed = time.time() - start_time
     remaining = min_total_delay - elapsed
@@ -266,6 +305,52 @@ def handle_final_response(client: NewClient, chat: JID, sender_id: str, text: st
     client.send_message(to=chat, message=final_answer)
     save_message(user_id=sender_id, message=final_answer, timestamp=int(time.time()), from_me=True)
     log.info(f"Sent final response to {sender_id}.")
+
+def process_llm_tools(user_message: str, client: NewClient, chat: JID):
+    """
+    Handles entire LLM tool processing flow.
+    """
+    tool_calls = poll_llm_for_tool_choice(user_message)
+    if not tool_calls:
+        log.info("No tool calls needed for user message.")
+        return "No tool calls needed."
+
+    tool_call = tool_calls[0]
+
+    if tool_call.name == "web_search_tool":
+        log.info("Processing web search tool call.")
+        search_query = tool_call.arguments.get("query", "")
+        if not search_query:
+            log.error("No search query provided in tool call arguments.")
+            return "No search query provided."
+        # Call the web search tool
+        search_results = duckduckgo_web_search(search_query)
+        log.debug(f"Web search results: {search_results}")
+        # Here you would process the search results and return them
+        result_strings = []
+        for result in search_results:
+            if "error" in result:
+                result_strings.append(result["error"])
+            else:
+                url = result.get("url", "")
+                snippet = result.get("snippet", "")
+                result_strings.append(f"{url}\n{snippet}\n")
+        return "\n".join(result_strings)
+    elif tool_call.name == "generate_image_tool":
+        log.info("Processing image generation tool call.")
+        prompt = tool_call.arguments.get("prompt", "")
+        if not prompt:
+            log.error("No prompt provided for image generation.")
+            return "No prompt provided for image generation."
+        # Call the image generation tool, it returns the filepath
+        image_path = generate_image_with_openai(prompt)
+        if not image_path:
+            return "Error generating image."
+        client.send_image(chat, image_path)
+        # Here you would handle the image file, e.g., save or send it
+        return "Image generated successfully."
+
+    return "Something went wrong with tool processing."
 
 # --- Main event handlers ---
 

@@ -26,7 +26,7 @@ def _call_openai_api(system_prompt, user_message):
         logging.error(f"OpenAI API Request Failed: {e}")
         return "Error with OpenAI API request."
 
-def generate_final_response(user_id, scraped_text, user_text):
+def generate_final_response(user_id, scraped_text, user_text, tool_usage_result):
     """
     Generate the final response for the user.
     """
@@ -34,7 +34,8 @@ def generate_final_response(user_id, scraped_text, user_text):
     final_prompt = FINAL_RESPONSE_PROMPT.format(
         ai_assistant_name=AI_ASSISTANT_NAME,
         previous_messages=get_recent_messages_formatted(user_id),
-        scraped_text=scraped_text or "No additional content provided."
+        scraped_text=scraped_text or "No additional content provided.",
+        tool_usage_result=tool_usage_result or "No tools were used.",
     )
 
     logging.debug(f"Final prompt generated: {final_prompt}")

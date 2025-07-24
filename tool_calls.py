@@ -22,14 +22,8 @@ client = openai.OpenAI(api_key=OPENAI_API_KEY)
 class GenerateImageTool(BaseModel):
     prompt: str
 
-class EditTarget(str, Enum):
-    current = "current"
-    previous = "previous"
-
 class EditImageTool(BaseModel):
     prompt: str
-    edit_target: EditTarget
-
 
 class GenerateTTSTool(BaseModel):
     text: str
@@ -46,7 +40,7 @@ available_tools = [
     openai.pydantic_function_tool(
         EditImageTool,
         name="edit_image_tool",
-        description="Edit the current or previous image using a user prompt. Only provide the prompt and specify whether to edit the current or previous image."
+        description="Edit the latest image using a user prompt. Only provide the prompt how the image should be edited."
     ),
     openai.pydantic_function_tool(
         GenerateTTSTool,
@@ -66,7 +60,7 @@ def poll_llm_for_tool_choice(user_message):
     Returns the tool call(s) and arguments if any.
     """
     messages = []
-    system_prompt = ""
+    system_prompt = "Select zero or one tool to call based on the user message. We don't want to call tools for every user message, only when necessary. If you don't need to call a tool, just return an empty list."
     messages.append({"role": "system", "content": system_prompt})
     messages.append({"role": "user", "content": user_message})
     try:
@@ -75,7 +69,9 @@ def poll_llm_for_tool_choice(user_message):
             messages=messages,
             tools=available_tools,
         )
+        fileLogger.log(f"[POLL_LLM_FOR_TOOL_CHOICE] [COMPLETION]: {str(completion)}")
         tool_calls = completion.choices[0].message.tool_calls or []
+        fileLogger.log(f"[POLL_LLM_FOR_TOOL_CHOICE] [TOOL_CALLS]: {str(tool_calls)}")
         return tool_calls
     except Exception as e:
         logging.error(f"Tool polling LLM failed: {e}")

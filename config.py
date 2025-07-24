@@ -28,6 +28,11 @@ If the user provided a link, I opened the link for you and heres the text it con
 {scraped_text}
 --------------------------------
 
+If the user used any tools, here are the results:
+--------------------------------
+{tool_usage_result}
+--------------------------------
+
 Please provide a short, friendly, helpful response in the same language as the user's message.
 It's ok to admit that you do not know something.
 Use the user's latest message and the summary to determine the language.
