@@ -28,7 +28,7 @@ from tool_calls import (
     transcribe_audio_with_whisper,
     web_search
 )
-from config import SKIP_HISTORY_SYNC
+from config import SKIP_HISTORY_SYNC, SCENARIO, SCRAPE_USER_LINKS, DOWNLOAD_USER_FILES
 from filelogger import FileLogger
 fileLogger = FileLogger()
 
@@ -152,6 +152,10 @@ def handle_link(client: NewClient, message: MessageEv, sender_id, sender_name, t
     if not links_found:
         return
 
+    if not SCRAPE_USER_LINKS:
+        log.info(f"Link scraping is disabled; skipping link processing for {sender_id}.")
+        return
+
     link = links_found[0]
     log.info(f"Link detected: {link}")
 
@@ -204,6 +208,11 @@ def convert_docx_to_markdown(docx_path):
 def handle_file(client: NewClient, message: MessageEv, user_text: str, sender_id: str):
     """Handles file attachments (downloads the file, converts, and saves as text, and adds to session context)."""
     log.info(f"Handling file attachment for user {sender_id}.")
+
+    if not DOWNLOAD_USER_FILES:
+        log.info(f"File downloading is disabled; skipping file handling for {sender_id}.")
+        return user_text
+
     file_name = None
     document_msg = getattr(message.Message, "documentMessage", None)
     image_msg = getattr(message.Message, "imageMessage", None)
@@ -330,69 +339,110 @@ def process_llm_tools(user_message: str, scraped_text: str, client: NewClient, c
     """
     Handles entire LLM tool processing flow.
     """
+
     tool_call = poll_llm_for_tool_choice(user_message, get_recent_messages_formatted(sender_id), scraped_text)
+
     if not tool_call:
         log.info("No tool calls needed for user message.")
         return "No tool calls needed."
 
-    if tool_call.function.name == "web_search_tool":
-        log.info("Processing web search tool call.")
-        search_query = getattr(tool_call.function.parsed_arguments, "query", None)
-        if not search_query:
-            log.error("No search query provided in tool call arguments.")
-            return "No search query provided."
-        # Call the web search tool
-        search_results = web_search(search_query)
-        log.debug(f"Web search results: {search_results}")
-        # Here you would process the search results and return them
-        result_strings = []
-        for result in search_results:
-            url = result.get("url", "")
-            snippet = result.get("snippet", "")
-            result_strings.append(f"{url}\n{snippet}\n")
-        return tool_call.function.name + ": " + "\n".join(result_strings)
-    elif tool_call.function.name == "generate_tts_tool":
-        log.info("Processing text-to-speech tool call.")
-        text = getattr(tool_call.function.parsed_arguments, "text", None)
-        if not text:
-            log.error("No text provided for TTS generation.")
-            return "No text provided for TTS generation."
-        audio_path = text_to_speech_with_openai(text)
-        if not audio_path:
-            return "Error generating audio."
-        client.send_audio(chat, audio_path)
-        # Here you would handle the audio file, e.g., save or send it
-        return f"{tool_call.function.name}: Audio generated successfully. It will be sent before this message. Please act like you just generated and sent the audio successfully for the user."
-    elif tool_call.function.name == "generate_image_tool":
-        log.info("Processing image generation tool call.")
-        prompt = getattr(tool_call.function.parsed_arguments, "prompt", None)
-        if not prompt:
-            log.error("No prompt provided for image generation.")
-            return "No prompt provided for image generation."
-        # Call the image generation tool, it returns the filepath
-        client.send_message(chat, generate_wait_message(user_text=user_message, user_id=chat.User))
-        image_path = generate_image_with_openai(prompt)
-        USER_LATEST_IMAGE[sender_id] = image_path
-        if not image_path:
-            return "Error generating image."
-        client.send_image(chat, image_path)
-        # Here you would handle the image file, e.g., save or send it
-        return f"{tool_call.function.name}: Image generated successfully. It will be sent before this message. Please act like you just generated and sent the image successfully for the user."
-    elif tool_call.function.name == "edit_image_tool":
-        log.info("Processing image editing tool call.")
-        prompt = getattr(tool_call.function.parsed_arguments, "prompt", None)
-        image_path = USER_LATEST_IMAGE.get(sender_id, None)
-        if not image_path or not prompt:
-            log.error("Missing image path or prompt for image editing.")
-            return "Missing image path or prompt for image editing."
-        # Call the image editing tool, it returns the filepath
-        client.send_message(chat, generate_wait_message(user_text=user_message, user_id=chat.User))
-        edited_image_path = edit_image_with_openai(image_path, prompt)
-        if not edited_image_path:
-            return "Error editing image."
-        client.send_image(chat, edited_image_path)
-        # Here you would handle the edited image file, e.g., save or send it
-        return f"{tool_call.function.name}: Image edited successfully. It will be sent before this message. Please act like you just generated and sent the edited image successfully for the user."
+    if SCENARIO == "base":
+        if tool_call.function.name == "web_search_tool":
+            log.info("Processing web search tool call.")
+            search_query = getattr(tool_call.function.parsed_arguments, "query", None)
+            if not search_query:
+                log.error("No search query provided in tool call arguments.")
+                return "No search query provided."
+            search_results = web_search(search_query)
+            log.debug(f"Web search results: {search_results}")
+            result_strings = []
+            for result in search_results:
+                url = result.get("url", "")
+                snippet = result.get("snippet", "")
+                result_strings.append(f"{url}\n{snippet}\n")
+            return tool_call.function.name + ": " + "\n".join(result_strings)
+        elif tool_call.function.name == "generate_tts_tool":
+            log.info("Processing text-to-speech tool call.")
+            text = getattr(tool_call.function.parsed_arguments, "text", None)
+            if not text:
+                log.error("No text provided for TTS generation.")
+                return "No text provided for TTS generation."
+            audio_path = text_to_speech_with_openai(text)
+            if not audio_path:
+                return "Error generating audio."
+            client.send_audio(chat, audio_path)
+            return f"{tool_call.function.name}: Audio generated successfully. It will be sent before this message. Please act like you just generated and sent the audio successfully for the user."
+        elif tool_call.function.name == "generate_image_tool":
+            log.info("Processing image generation tool call.")
+            prompt = getattr(tool_call.function.parsed_arguments, "prompt", None)
+            if not prompt:
+                log.error("No prompt provided for image generation.")
+                return "No prompt provided for image generation."
+            client.send_message(chat, generate_wait_message(user_text=user_message, user_id=chat.User))
+            image_path = generate_image_with_openai(prompt)
+            USER_LATEST_IMAGE[sender_id] = image_path
+            if not image_path:
+                return "Error generating image."
+            client.send_image(chat, image_path)
+            return f"{tool_call.function.name}: Image generated successfully. It will be sent before this message. Please act like you just generated and sent the image successfully for the user."
+        elif tool_call.function.name == "edit_image_tool":
+            log.info("Processing image editing tool call.")
+            prompt = getattr(tool_call.function.parsed_arguments, "prompt", None)
+            image_path = USER_LATEST_IMAGE.get(sender_id, None)
+            if not image_path or not prompt:
+                log.error("Missing image path or prompt for image editing.")
+                return "Missing image path or prompt for image editing."
+            client.send_message(chat, generate_wait_message(user_text=user_message, user_id=chat.User))
+            edited_image_path = edit_image_with_openai(image_path, prompt)
+            if not edited_image_path:
+                return "Error editing image."
+            client.send_image(chat, edited_image_path)
+            return f"{tool_call.function.name}: Image edited successfully. It will be sent before this message. Please act like you just generated and sent the edited image successfully for the user."
+    elif SCENARIO == "hairdresser":
+        if tool_call.function.name == "check_appointment_calendar_tool":
+            log.info("Processing check appointment calendar tool call.")
+            start_date = getattr(tool_call.function.parsed_arguments, "start_date", None)
+            end_date = getattr(tool_call.function.parsed_arguments, "end_date", None)
+            if not start_date or not end_date:
+                log.error("Missing start or end date for appointment calendar check.")
+                return "Missing start or end date for appointment calendar check."
+            # Here you would implement the logic to check the appointment calendar
+            return f"Checked appointment calendar from {start_date} to {end_date}."
+        elif tool_call.function.name == "get_services_tool":
+            log.info("Processing get services tool call.")
+            # Here you would implement the logic to retrieve available services
+            return "Retrieved available services."
+    elif SCENARIO == "car_parts_retailer":
+        if tool_call.function.name == "find_car_info_with_plate_tool":
+            log.info("Processing find car info with plate tool call.")
+            license_plate = getattr(tool_call.function.parsed_arguments, "license_plate", None)
+            if not license_plate:
+                log.error("No license plate provided for car info retrieval.")
+                return "No license plate provided for car info retrieval."
+            # Here you would implement the logic to find car info
+            return f"Found car info for license plate {license_plate}."
+        elif tool_call.function.name == "find_compatible_parts_tool":
+            log.info("Processing find compatible parts tool call.")
+            # Here you would implement the logic to find compatible parts
+            return "Found compatible parts."
+    elif SCENARIO == "bookstore":
+        if tool_call.function.name == "view_book_order_history_tool":
+            log.info("Processing view book order history tool call.")
+            phone_number = getattr(tool_call.function.parsed_arguments, "phone_number", None)
+            if not phone_number:
+                log.error("No phone number provided for order history retrieval.")
+                return "No phone number provided for order history retrieval."
+            # Here you would implement the logic to view book order history
+            return f"Retrieved order history for phone number {phone_number}."
+        elif tool_call.function.name == "check_book_availability_tool":
+            log.info("Processing check book availability tool call.")
+            # Here you would implement the logic to check book availability
+            return "Checked book availability."
+        elif tool_call.function.name == "reserve_book_tool":
+            log.info("Processing reserve book tool call.")
+            # Here you would implement the logic to reserve a book
+            return "Reserved book successfully."
+
     return "Something went wrong with tool processing."
 
 # --- Main event handlers ---

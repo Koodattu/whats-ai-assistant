@@ -2,7 +2,6 @@ import random
 import base64
 import mimetypes
 import os
-from pydantic import BaseModel
 from PIL import Image
 import io
 from config import (
@@ -19,42 +18,7 @@ fileLogger = FileLogger()
 
 client = openai.OpenAI(api_key=OPENAI_API_KEY)
 
-class GenerateImageTool(BaseModel):
-    prompt: str
-
-class EditImageTool(BaseModel):
-    prompt: str
-
-class GenerateTTSTool(BaseModel):
-    text: str
-
-class WebSearchTool(BaseModel):
-    query: str
-
-available_tools = [
-    openai.pydantic_function_tool(
-        GenerateImageTool,
-        name="generate_image_tool",
-        description="Generate a new image from a user prompt. Only provide the prompt."
-    ),
-    openai.pydantic_function_tool(
-        EditImageTool,
-        name="edit_image_tool",
-        description="Edit the latest image using a user prompt. Only provide the prompt how the image should be edited."
-    ),
-    openai.pydantic_function_tool(
-        GenerateTTSTool,
-        name="generate_tts_tool",
-        description="Generate speech audio from text. Only provide the text to be spoken. This should be used when the user request audio output.",
-    ),
-    openai.pydantic_function_tool(
-        WebSearchTool,
-        name="web_search_tool",
-        description="Search the web for up-to-date information. Only provide the search query."
-    ),
-]
-
-def poll_llm_for_tool_choice(user_message, past_user_message, user_context) -> ParsedFunctionToolCall | None:
+def poll_llm_for_tool_choice(user_message, past_user_message, user_context, available_tools) -> ParsedFunctionToolCall | None:
     """
     Poll the LLM to decide which tool to call for a user request.
     Returns the tool call(s) and arguments if any.
