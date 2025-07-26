@@ -12,6 +12,7 @@ from docx import Document
 import threading
 import queue
 from database import save_message, delete_messages, get_recent_messages_formatted
+from scenarios import SCENARIOS
 from scraping import scrape_text
 import os
 from llm import (
@@ -325,7 +326,7 @@ def handle_final_response(client: NewClient, chat: JID, sender_id: str, text: st
         f"[{item.type.upper()}] {item.source}\n{item.content}" for item in session_items
     ])
     tool_usage_result = process_llm_tools(text, scraped_text, client, chat, sender_id)
-    final_answer = generate_final_response(user_id=sender_id, scraped_text=scraped_text, user_text=text, tool_usage_result=tool_usage_result)
+    final_answer = generate_final_response(SCENARIOS[SCENARIO].final_response_prompt, user_id=sender_id, scraped_text=scraped_text, user_text=text, tool_usage_result=tool_usage_result)
     log.debug(f"Final answer generated: {final_answer}")
     elapsed = time.time() - start_time
     remaining = min_total_delay - elapsed
@@ -340,7 +341,7 @@ def process_llm_tools(user_message: str, scraped_text: str, client: NewClient, c
     Handles entire LLM tool processing flow.
     """
 
-    tool_call = poll_llm_for_tool_choice(user_message, get_recent_messages_formatted(sender_id), scraped_text)
+    tool_call = poll_llm_for_tool_choice(user_message, get_recent_messages_formatted(sender_id), scraped_text, SCENARIOS[SCENARIO].tools)
 
     if not tool_call:
         log.info("No tool calls needed for user message.")

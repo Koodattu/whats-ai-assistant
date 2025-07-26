@@ -3,7 +3,6 @@ from database import get_recent_messages_formatted
 from config import (
     OPENAI_API_KEY,
     OPENAI_MODEL_NAME,
-    FINAL_RESPONSE_PROMPT,
     AI_ASSISTANT_NAME
 )
 import openai
@@ -26,12 +25,12 @@ def _call_openai_api(system_prompt, user_message):
         logging.error(f"OpenAI API Request Failed: {e}")
         return "Error with OpenAI API request."
 
-def generate_final_response(user_id, scraped_text, user_text, tool_usage_result):
+def generate_final_response(prompt_base, user_id, scraped_text, user_text, tool_usage_result):
     """
     Generate the final response for the user.
     """
     # Format the prompt
-    final_prompt = FINAL_RESPONSE_PROMPT.format(
+    final_prompt = prompt_base.format(
         ai_assistant_name=AI_ASSISTANT_NAME,
         previous_messages=get_recent_messages_formatted(user_id),
         scraped_text=scraped_text or "No additional content provided.",
