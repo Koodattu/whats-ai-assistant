@@ -399,6 +399,13 @@ def process_llm_tools(user_message: str, scraped_text: str, client: NewClient, c
             client.send_image(chat, edited_image_path)
             return f"{tool_call.function.name}: Image edited successfully. It will be sent before this message. Please act like you just generated and sent the edited image successfully for the user."
     elif SCENARIO == "hairdresser":
+        from tool_calls_dummy import (
+            dummy_check_appointment_calendar_tool,
+            dummy_get_services_tool,
+            dummy_get_order_history_tool,
+            dummy_book_appointment_tool,
+            dummy_cancel_appointment_tool,
+        )
         if tool_call.function.name == "check_appointment_calendar_tool":
             log.info("Processing check appointment calendar tool call.")
             start_date = getattr(tool_call.function.parsed_arguments, "start_date", None)
@@ -406,43 +413,133 @@ def process_llm_tools(user_message: str, scraped_text: str, client: NewClient, c
             if not start_date or not end_date:
                 log.error("Missing start or end date for appointment calendar check.")
                 return "Missing start or end date for appointment calendar check."
-            # Here you would implement the logic to check the appointment calendar
-            return f"Checked appointment calendar from {start_date} to {end_date}."
+            result = dummy_check_appointment_calendar_tool(start_date, end_date)
+            return f"Available slots: {result['available_slots']}\n{result['message']}"
         elif tool_call.function.name == "get_services_tool":
             log.info("Processing get services tool call.")
-            # Here you would implement the logic to retrieve available services
-            return "Retrieved available services."
+            gender = getattr(tool_call.function.parsed_arguments, "gender", None)
+            if not gender:
+                log.error("No gender provided for get services tool.")
+                return "No gender provided for get services tool."
+            result = dummy_get_services_tool(gender)
+            return f"Services for {gender}: {result['services']}"
+        elif tool_call.function.name == "get_order_history_tool":
+            log.info("Processing get order history tool call.")
+            phone_number = getattr(tool_call.function.parsed_arguments, "phone_number", None)
+            if not phone_number:
+                log.error("No phone number provided for order history retrieval.")
+                return "No phone number provided for order history retrieval."
+            result = dummy_get_order_history_tool(phone_number)
+            return f"Order history: {result['history']}"
+        elif tool_call.function.name == "book_appointment_tool":
+            log.info("Processing book appointment tool call.")
+            phone_number = getattr(tool_call.function.parsed_arguments, "phone_number", None)
+            service = getattr(tool_call.function.parsed_arguments, "service", None)
+            preferred_time = getattr(tool_call.function.parsed_arguments, "preferred_time", None)
+            if not phone_number or not service or not preferred_time:
+                log.error("Missing arguments for booking appointment.")
+                return "Missing arguments for booking appointment."
+            result = dummy_book_appointment_tool(phone_number, service, preferred_time)
+            return f"{result['message']} (Confirmation: {result['confirmation_number']})"
+        elif tool_call.function.name == "cancel_appointment_tool":
+            log.info("Processing cancel appointment tool call.")
+            phone_number = getattr(tool_call.function.parsed_arguments, "phone_number", None)
+            if not phone_number:
+                log.error("No phone number provided for cancel appointment.")
+                return "No phone number provided for cancel appointment."
+            result = dummy_cancel_appointment_tool(phone_number)
+            return result["message"]
     elif SCENARIO == "car_parts_retailer":
+        from tool_calls_dummy import (
+            dummy_find_car_info_with_plate_tool,
+            dummy_find_compatible_part_tool,
+            dummy_place_car_part_order_tool,
+            dummy_check_car_part_order_tool,
+        )
         if tool_call.function.name == "find_car_info_with_plate_tool":
             log.info("Processing find car info with plate tool call.")
             license_plate = getattr(tool_call.function.parsed_arguments, "license_plate", None)
             if not license_plate:
                 log.error("No license plate provided for car info retrieval.")
                 return "No license plate provided for car info retrieval."
-            # Here you would implement the logic to find car info
-            return f"Found car info for license plate {license_plate}."
-        elif tool_call.function.name == "find_compatible_parts_tool":
-            log.info("Processing find compatible parts tool call.")
-            # Here you would implement the logic to find compatible parts
-            return "Found compatible parts."
+            result = dummy_find_car_info_with_plate_tool(license_plate)
+            return f"Car info: {result['car']}"
+        elif tool_call.function.name == "find_compatible_part_tool":
+            log.info("Processing find compatible part tool call.")
+            license_plate = getattr(tool_call.function.parsed_arguments, "license_plate", None)
+            part_type = getattr(tool_call.function.parsed_arguments, "part_type", None)
+            if not license_plate or not part_type:
+                log.error("Missing license plate or part type for compatible part search.")
+                return "Missing license plate or part type for compatible part search."
+            result = dummy_find_compatible_part_tool(license_plate, part_type)
+            return f"Compatible parts: {result['compatible_parts']}"
+        elif tool_call.function.name == "place_car_part_order_tool":
+            log.info("Processing place car part order tool call.")
+            phone_number = getattr(tool_call.function.parsed_arguments, "phone_number", None)
+            part_id = getattr(tool_call.function.parsed_arguments, "part_id", None)
+            quantity = getattr(tool_call.function.parsed_arguments, "quantity", None)
+            if not phone_number or not part_id or quantity is None:
+                log.error("Missing arguments for placing car part order.")
+                return "Missing arguments for placing car part order."
+            result = dummy_place_car_part_order_tool(phone_number, part_id, quantity)
+            return f"Order placed: {result['order_id']} (Est. delivery: {result['estimated_delivery']})"
+        elif tool_call.function.name == "check_car_part_order_tool":
+            log.info("Processing check car part order tool call.")
+            phone_number = getattr(tool_call.function.parsed_arguments, "phone_number", None)
+            if not phone_number:
+                log.error("No phone number provided for checking car part order.")
+                return "No phone number provided for checking car part order."
+            result = dummy_check_car_part_order_tool(phone_number)
+            return f"Orders: {result['orders']}"
     elif SCENARIO == "bookstore":
+        from tool_calls_dummy import (
+            dummy_view_book_order_history_tool,
+            dummy_suggest_books_tool,
+            dummy_check_book_stock_tool,
+            dummy_reserve_book_tool,
+            dummy_cancel_book_tool,
+        )
         if tool_call.function.name == "view_book_order_history_tool":
             log.info("Processing view book order history tool call.")
             phone_number = getattr(tool_call.function.parsed_arguments, "phone_number", None)
             if not phone_number:
                 log.error("No phone number provided for order history retrieval.")
                 return "No phone number provided for order history retrieval."
-            # Here you would implement the logic to view book order history
-            return f"Retrieved order history for phone number {phone_number}."
-        elif tool_call.function.name == "check_book_availability_tool":
-            log.info("Processing check book availability tool call.")
-            # Here you would implement the logic to check book availability
-            return "Checked book availability."
+            result = dummy_view_book_order_history_tool(phone_number)
+            return f"Book order history: {result['orders']}"
+        elif tool_call.function.name == "suggest_books_tool":
+            log.info("Processing suggest books tool call.")
+            genre = getattr(tool_call.function.parsed_arguments, "genre", None)
+            author = getattr(tool_call.function.parsed_arguments, "author", None)
+            result = dummy_suggest_books_tool(genre, author)
+            return f"Suggestions: {result['suggestions']}"
+        elif tool_call.function.name == "check_book_stock_tool":
+            log.info("Processing check book stock tool call.")
+            title = getattr(tool_call.function.parsed_arguments, "title", None)
+            author = getattr(tool_call.function.parsed_arguments, "author", None)
+            if not title:
+                log.error("No title provided for book stock check.")
+                return "No title provided for book stock check."
+            result = dummy_check_book_stock_tool(title, author)
+            return f"Book stock: {result}"
         elif tool_call.function.name == "reserve_book_tool":
             log.info("Processing reserve book tool call.")
-            # Here you would implement the logic to reserve a book
-            return "Reserved book successfully."
-
+            phone_number = getattr(tool_call.function.parsed_arguments, "phone_number", None)
+            title = getattr(tool_call.function.parsed_arguments, "title", None)
+            if not phone_number or not title:
+                log.error("Missing phone number or title for reserving book.")
+                return "Missing phone number or title for reserving book."
+            result = dummy_reserve_book_tool(phone_number, title)
+            return f"Book reserved: {result['reservation_id']} (Pickup by {result['pickup_deadline']})"
+        elif tool_call.function.name == "cancel_book_tool":
+            log.info("Processing cancel book tool call.")
+            phone_number = getattr(tool_call.function.parsed_arguments, "phone_number", None)
+            title = getattr(tool_call.function.parsed_arguments, "title", None)
+            if not phone_number or not title:
+                log.error("Missing phone number or title for cancelling book reservation.")
+                return "Missing phone number or title for cancelling book reservation."
+            result = dummy_cancel_book_tool(phone_number, title)
+            return result["message"]
     return "Something went wrong with tool processing."
 
 # --- Main event handlers ---
