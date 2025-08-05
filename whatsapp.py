@@ -1,4 +1,5 @@
 import time
+import random
 from collections import defaultdict, deque
 from neonize.client import NewClient
 from neonize.events import MessageEv, HistorySyncEv
@@ -63,13 +64,22 @@ def convert_docx_to_markdown(docx_path):
 
 def handle_greeting(client: NewClient, chat, sender_id, sender_name, text):
     """Handles first-time greeting for a new conversation."""
+    # Start timer for minimum response delay
+    min_total_delay = random.uniform(2, 5)
+    start_time = time.time()
+
     greeting = generate_first_time_greeting(
         sender_name, text,
         public_prompts["greeting"],
         private_prompts["greeting"]
     )
-    # Add a delay before responding
-    time.sleep(5)
+
+    # Calculate remaining delay time
+    elapsed = time.time() - start_time
+    remaining = min_total_delay - elapsed
+    if remaining > 0:
+        time.sleep(remaining)
+
     client.send_message(chat, greeting)
     client.send_chat_presence(jid=chat, state=ChatPresence.CHAT_PRESENCE_PAUSED, media=ChatPresenceMedia.CHAT_PRESENCE_MEDIA_TEXT)
     log.info(f"Sent greeting to {sender_name} ({sender_id}).")
@@ -129,8 +139,9 @@ def handle_commands(client: NewClient, chat, sender_id, text: str) -> bool:
     log.info(f"Command {text} from {sender_id} is allowed.")
     global is_bot_running, custom_prompts, bot_name
 
-    # Add a delay before responding
-    time.sleep(3)
+    # Add a variable delay before responding
+    delay = random.uniform(2, 4)
+    time.sleep(delay)
     if text.startswith("!files"):
         # Get list of files in the downloads folder
         downloads_folder = "./downloads"
@@ -237,13 +248,23 @@ def handle_commands(client: NewClient, chat, sender_id, text: str) -> bool:
 def handle_final_response(client: NewClient, chat, sender_id, text):
     """Generates and sends the final response using the LLM, with watchdog check."""
     from llm import call_watchdog_llm
+
+    # Start timer for minimum response delay
+    min_total_delay = random.uniform(3, 6)
+    start_time = time.time()
+
     is_relevant = call_watchdog_llm(text, private_prompts["watchdog"])
     if not is_relevant:
-        # Add a delay before responding
-        time.sleep(5)
+        # Calculate remaining delay time
+        elapsed = time.time() - start_time
+        remaining = min_total_delay - elapsed
+        if remaining > 0:
+            time.sleep(remaining)
+
         client.send_message(chat, "Valitettavasti voin auttaa vain vuokra-asuntoihin ja mökkeihin liittyvissä kysymyksissä.")
         log.info(f"Watchdog prevented response for {sender_id}. Message not relevant.")
         return
+
     final_answer = generate_final_response(
         user_id=sender_id,
         user_text=text,
@@ -254,8 +275,13 @@ def handle_final_response(client: NewClient, chat, sender_id, text):
     if not final_answer.strip():
         log.info(f"No final response generated for {sender_id}.")
         return
-    # Add a delay before responding
-    time.sleep(5)
+
+    # Calculate remaining delay time
+    elapsed = time.time() - start_time
+    remaining = min_total_delay - elapsed
+    if remaining > 0:
+        time.sleep(remaining)
+
     client.send_message(chat, final_answer)
     client.send_chat_presence(jid=chat, state=ChatPresence.CHAT_PRESENCE_PAUSED, media=ChatPresenceMedia.CHAT_PRESENCE_MEDIA_TEXT)
     save_message(sender_id, final_answer, int(time.time()), True)
@@ -325,6 +351,9 @@ def on_message(client: NewClient, message: MessageEv):
                 message.Message.documentMessage.caption or
                 "")
         from_me = message.Info.MessageSource.IsFromMe
+        is_group = message.Info.MessageSource.IsGroup
+        is_edit = message.IsEdit
+        is_viewonce = message.IsViewOnce or message.IsViewOnceV2 or message.IsViewOnceV2Extension
         timestamp = message.Info.Timestamp // 1000  # Convert ms to s if needed
         sender_name = message.Info.Pushname or "User"
 
@@ -333,6 +362,11 @@ def on_message(client: NewClient, message: MessageEv):
         # Skip messages from the bot itself
         if chat.User == sender_id and from_me:
             log.info(f"Skipping message from bot itself: {sender_id}")
+            return
+
+        # Skip group, edit, and view once messages
+        if is_group or is_edit or is_viewonce:
+            log.info(f"Skipping group/edit/view once message from {sender_id}.")
             return
 
         # Check if the message is older than one minute
