@@ -65,7 +65,7 @@ def convert_docx_to_markdown(docx_path):
 def handle_greeting(client: NewClient, chat, sender_id, sender_name, text):
     """Handles first-time greeting for a new conversation."""
     # Start timer for minimum response delay
-    min_total_delay = random.uniform(2, 3)
+    min_total_delay = random.uniform(2, 5)
     start_time = time.time()
 
     greeting = generate_first_time_greeting(
@@ -140,7 +140,7 @@ def handle_commands(client: NewClient, chat, sender_id, text: str) -> bool:
     global is_bot_running, custom_prompts, bot_name
 
     # Add a variable delay before responding
-    delay = random.uniform(2, 3)
+    delay = random.uniform(2, 5)
     time.sleep(delay)
     if text.startswith("!files"):
         # Get list of files in the downloads folder
@@ -170,7 +170,7 @@ def handle_commands(client: NewClient, chat, sender_id, text: str) -> bool:
             client.send_message(chat, f"[KOMENTO] Tiedostoa ei löytynyt: {filename}")
         log.info(f"Processed !removefile command for {sender_id} and file {filename}.")
         return True
-    elif text.startswith("!commands"):
+    elif text.startswith("!commands") or text.startswith("!komennot"):
         commands = ["!commands - Näytä käytettävissä olevat komennot",
                     "!files - Listaa tiedostot downloads-kansiosta",
                     "!removefile <tiedostonimi> - Poista tiedosto downloads-kansiosta",
@@ -250,7 +250,7 @@ def handle_final_response(client: NewClient, chat, sender_id, text):
     from llm import call_watchdog_llm
 
     # Start timer for minimum response delay
-    min_total_delay = random.uniform(2, 3)
+    min_total_delay = random.uniform(2, 5)
     start_time = time.time()
 
     is_relevant, response = call_watchdog_llm(text, private_prompts["watchdog"])
