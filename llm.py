@@ -74,7 +74,7 @@ def call_watchdog_llm(user_message, watchdog_prompt):
                 {"role": "system", "content": system_prompt},
                 {"role": "user", "content": user_message},
             ],
-            max_tokens=10,
+            max_tokens=200,
             response_format=WatchdogResponse
         )
         result = response.choices[0].message.parsed.relevant, response.choices[0].message.parsed.response
