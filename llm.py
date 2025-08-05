@@ -50,6 +50,7 @@ def call_llm_api(system_prompt, user_prompt):
 
 class WatchdogResponse(BaseModel):
     relevant: bool
+    response: str = None
 
 def call_watchdog_llm(user_message, watchdog_prompt):
     """
@@ -76,12 +77,12 @@ def call_watchdog_llm(user_message, watchdog_prompt):
             max_tokens=10,
             response_format=WatchdogResponse
         )
-        result = response.choices[0].message.parsed.relevant
-        return bool(result)
+        result = response.choices[0].message.parsed.relevant, response.choices[0].message.parsed.response
+        return result
     except Exception as e:
         print(f"Error calling watchdog LLM: {e}")
         log.exception(e)
-        return False
+        return False, None
 
 def generate_first_time_greeting(user_name, user_message, public_prompt, private_prompt):
     """

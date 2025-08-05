@@ -253,7 +253,7 @@ def handle_final_response(client: NewClient, chat, sender_id, text):
     min_total_delay = random.uniform(3, 6)
     start_time = time.time()
 
-    is_relevant = call_watchdog_llm(text, private_prompts["watchdog"])
+    is_relevant, response = call_watchdog_llm(text, private_prompts["watchdog"])
     if not is_relevant:
         # Calculate remaining delay time
         elapsed = time.time() - start_time
@@ -261,7 +261,7 @@ def handle_final_response(client: NewClient, chat, sender_id, text):
         if remaining > 0:
             time.sleep(remaining)
 
-        client.send_message(chat, "Valitettavasti voin auttaa vain vuokra-asuntoihin ja mökkeihin liittyvissä kysymyksissä.")
+        client.send_message(chat, response)
         log.info(f"Watchdog prevented response for {sender_id}. Message not relevant.")
         return
 

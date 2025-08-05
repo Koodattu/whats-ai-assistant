@@ -53,6 +53,8 @@ Vastaa {{"relevant": true}} jos käyttäjän viesti:
 - On epäselvä mutta ei selvästi asiaan kuulumaton
 Vastaa {{"relevant": false}} vain jos viesti käsittelee selvästi jotain täysin muuta aihetta kuten matematiikkaa, pelejä, ruokaa, teknisiä ongelmia tai muita erikoisaloja.
 Älä koskaan selitä vastaustasi.
+Jos vastaat {{"relevant": true}}, voit vastata tyhjällä {{"response": ""}}.
+Jos vastaat {{"relevant": false}}, kirjoita {{"response": "Valitettavasti voin auttaa vain vuokra-asuntoihin ja mökkeihin liittyvissä kysymyksissä."}} tai jotain sen tyylistä, voit hieman muokata vastausta.
 
 Käyttäjän viesti:
 -----------------
