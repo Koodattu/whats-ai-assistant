@@ -145,35 +145,56 @@ def handle_commands(client: NewClient, chat, sender_id, text: str) -> bool:
     if text.startswith("!files"):
         # Get list of files in the downloads folder
         downloads_folder = "./downloads"
-        files = os.listdir(downloads_folder)
-        files_list = "\n".join(files)
-        client.send_message(chat, f"[KOMENTO] Kansiosta löytyvät tiedostot:\n{files_list}")
+        files = sorted(os.listdir(downloads_folder))
+        if not files:
+            client.send_message(chat, "[KOMENTO] Ei tiedostoja.")
+        else:
+            files_list = "\n".join([f"{i+1}. {file}" for i, file in enumerate(files)])
+            client.send_message(chat, f"[KOMENTO] Kansiosta löytyvät tiedostot:\n{files_list}")
         log.info(f"Processed !files command for {sender_id}.")
         return True
     elif text.startswith("!removefile"):
-        # Remove a file from the downloads folder
+        # Remove a file from the downloads folder by ID or filename
         parts = text.split(" ", 1)
         if len(parts) < 2:
-            client.send_message(chat, "[KOMENTO] Anna poistettavan tiedoston nimi.")
+            client.send_message(chat, "[KOMENTO] Anna poistettavan tiedoston ID-numero tai nimi.")
             return True
-        filename = parts[1]
-        dl_path = os.path.join("./downloads", filename)
+        file_identifier = parts[1].strip()
+        downloads_folder = "./downloads"
+        files = sorted(os.listdir(downloads_folder))
+
+        # Check if it's a numeric ID
+        filename = None
+        if file_identifier.isdigit():
+            file_index = int(file_identifier) - 1
+            if 0 <= file_index < len(files):
+                filename = files[file_index]
+            else:
+                client.send_message(chat, f"[KOMENTO] Virheellinen ID-numero: {file_identifier}")
+                return True
+        else:
+            # Treat as filename
+            if file_identifier in files:
+                filename = file_identifier
+            else:
+                client.send_message(chat, f"[KOMENTO] Tiedostoa ei löytynyt: {file_identifier}")
+                return True
+
+        dl_path = os.path.join(downloads_folder, filename)
         base_filename = os.path.splitext(os.path.basename(filename))[0]
         txt_filename = f"{base_filename}.txt"
         conv_path = os.path.join("./converted", txt_filename)
-        if os.path.exists(dl_path):
-            os.remove(dl_path)
-            if os.path.exists(conv_path):
-                os.remove(conv_path)
-            client.send_message(chat, f"[KOMENTO] Tiedosto poistettu: {filename}")
-        else:
-            client.send_message(chat, f"[KOMENTO] Tiedostoa ei löytynyt: {filename}")
+
+        os.remove(dl_path)
+        if os.path.exists(conv_path):
+            os.remove(conv_path)
+        client.send_message(chat, f"[KOMENTO] Tiedosto poistettu: {filename}")
         log.info(f"Processed !removefile command for {sender_id} and file {filename}.")
         return True
     elif text.startswith("!commands") or text.startswith("!komennot"):
         commands = ["!commands - Näytä käytettävissä olevat komennot",
                     "!files - Listaa tiedostot downloads-kansiosta",
-                    "!removefile <tiedostonimi> - Poista tiedosto downloads-kansiosta",
+                    "!removefile <ID tai tiedostonimi> - Poista tiedosto downloads-kansiosta",
                     "!prompts - Näytä käytettävissä olevat promptit",
                     "!editprompt <promptin_nimi> <uusi_promptin_sisältö> - Muokkaa promptia",
                     "!renamebot <uusi_botin_nimi> - Vaihda botin nimi",
