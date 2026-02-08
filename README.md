@@ -1,10 +1,6 @@
 # WhatsApp AI Assistant
 
-<div align="center">
-
-<img src="https://raw.githubusercontent.com/Koodattu/ucs-llm-voice-image-edit/main/assets/gls.png" style="height: 200px;" />
-
-</div>
+![Preview](assets/preview.png)
 
 ## Overview
 
